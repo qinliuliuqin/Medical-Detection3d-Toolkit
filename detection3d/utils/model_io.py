@@ -1,6 +1,31 @@
+import glob
 import os
 import torch
 import shutil
+
+
+def get_checkpoint_folder(chk_root, epoch):
+  """
+  Get the checkpoint's folder with the specified epoch.
+  :param chk_root: the check point root directory, which may contain multiple checkpoints.
+  :param epoch: the epoch of the checkpoint, set -1 to get the latest epoch.
+  :return: the folder containing the checkpoint with the specified epoch.
+  """
+  assert os.path.isdir(chk_root), 'The folder does not exist: {}'.format(chk_root)
+
+  if epoch < 0:
+    latest_epoch = -1
+    chk_folders = os.path.join(chk_root, 'chk_*')
+    for folder in glob.glob(chk_folders):
+      folder_name = os.path.basename(folder)
+      tokens = folder_name.split('_')
+      cur_epoch = int(tokens[-1])
+      if cur_epoch > latest_epoch:
+        latest_epoch = cur_epoch
+
+    epoch = latest_epoch
+
+  return os.path.join(chk_root, 'chk_{}'.format(epoch))
 
 
 def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality):
