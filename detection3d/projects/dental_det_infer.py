@@ -4,9 +4,8 @@ import SimpleITK as sitk
 import time
 
 from detection3d.utils.image_tools import crop_image
-from detection3d.core.det_infer import detection_single_image, load_det_model
+from detection3d.core.lmk_det_infer import read_test_folder, detection_single_image, load_det_model
 from detection3d.utils.landmark_utils import merge_landmark_dataframes
-from detection3d.core.det_infer import read_test_folder
 from detection3d.dataset.landmark_dataset import read_image_list
 from detection3d.utils.landmark_utils import is_voxel_coordinate_valid, is_world_coordinate_valid
 
