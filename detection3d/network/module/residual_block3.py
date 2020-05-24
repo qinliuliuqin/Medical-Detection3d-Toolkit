@@ -1,5 +1,5 @@
 import torch.nn as nn
-from segmentation3d.network.module.conv_gn_relu3 import ConvGnRelu3, BottConvGnRelu3
+from detection3d.network.module.conv_gn_relu3 import ConvGnRelu3, BottConvGnRelu3
 
 
 class ResidualBlock3(nn.Module):

@@ -1,6 +1,6 @@
 import unittest
 import torch
-from segmentation3d.network.module.conv_gn_relu3 import ConvGnRelu3
+from detection3d.network.module.conv_gn_relu3 import ConvGnRelu3
 
 
 class TestBnReluConv3Methods(unittest.TestCase):
