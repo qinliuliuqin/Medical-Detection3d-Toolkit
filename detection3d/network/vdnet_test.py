@@ -1,6 +1,6 @@
 import torch
 
-from detection.network.vdnet import Net
+from detection3d.network.vdnet import Net
 
 
 def test_vdnet():

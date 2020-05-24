@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 
-from segmentation3d.network.module.weight_init import kaiming_weight_init, gaussian_weight_init
-from segmentation3d.network.module.vnet_inblock import InputBlock
-from segmentation3d.network.module.vnet_outblock import OutputBlock
-from segmentation3d.network.module.vnet_upblock import UpBlock
-from segmentation3d.network.module.vnet_downblock import DownBlock
+from detection3d.network.module.weight_init import kaiming_weight_init, gaussian_weight_init
+from detection3d.network.module.vnet_inblock import InputBlock
+from detection3d.network.module.vnet_outblock import OutputBlock
+from detection3d.network.module.vnet_upblock import UpBlock
+from detection3d.network.module.vnet_downblock import DownBlock
 
 
 def parameters_kaiming_init(net):
