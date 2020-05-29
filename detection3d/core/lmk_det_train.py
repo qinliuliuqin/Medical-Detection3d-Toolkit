@@ -11,7 +11,7 @@ from tensorboardX import SummaryWriter
 from detection3d.utils.image_tools import save_intermediate_results
 from detection3d.loss.focal_loss import FocalLoss
 from detection3d.utils.file_io import load_config, setup_logger
-from detection3d.utils.model_io import load_checkpoint, save_checkpoint
+from detection3d.utils.model_io import load_checkpoint, save_landmark_detection_checkpoint
 from detection3d.dataset.dataloader import get_landmark_detection_dataloader
 
 
@@ -134,7 +134,7 @@ def train(config_file):
         # save checkpoint
         if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0):
             if last_save_epoch != epoch_idx:
-                save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
+                save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
                 last_save_epoch = epoch_idx
 
         writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)
