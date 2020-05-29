@@ -6,20 +6,18 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
 from detection3d.utils.image_tools import save_intermediate_results
-from detection3d.dataset.landmark_dataset import LandmarkDetectionDataset
-from detection3d.dataset.sampler import EpochConcateSampler
 from detection3d.loss.focal_loss import FocalLoss
 from detection3d.utils.file_io import load_config, setup_logger
 from detection3d.utils.model_io import load_checkpoint, save_checkpoint
+from detection3d.dataset.dataloader import get_landmark_detection_dataloader
 
 
 def train(config_file):
     """ Medical image segmentation training engine
-    :param config_file: the input configuration file
+    :param config_file: the absolute path of the input configuration file
     :return: None
     """
     assert os.path.isfile(config_file), 'Config not found: {}'.format(config_file)
@@ -28,20 +26,19 @@ def train(config_file):
     cfg = load_config(config_file)
 
     # clean the existing folder if training from scratch
-    if os.path.isdir(cfg.general.save_dir):
-        if cfg.general.resume_epoch < 0:
-            shutil.rmtree(cfg.general.save_dir)
-            os.makedirs(cfg.general.save_dir)
-            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
-        else:
-            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
-    else:
+    if os.path.isdir(cfg.general.save_dir) and cfg.general.resume_epoch < 0:
+        shutil.rmtree(cfg.general.save_dir)
+
+    # create save folder if it does not exist
+    if not os.path.isdir(cfg.general.save_dir):
         os.makedirs(cfg.general.save_dir)
-        shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
+
+    # Update training config file
+    shutil.copy(config_file, os.path.join(cfg.general.save_dir, os.path.basename(config_file)))
 
     # enable logging
     log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
-    logger = setup_logger(log_file, 'seg3d')
+    logger = setup_logger(log_file, 'lmk_det3d')
 
     # control randomness during training
     np.random.seed(cfg.debug.seed)
@@ -49,33 +46,11 @@ def train(config_file):
     if cfg.general.num_gpus > 0:
         torch.cuda.manual_seed(cfg.debug.seed)
 
-    # dataset
-    dataset = LandmarkDetectionDataset(
-      mode='train',
-      image_list_file=cfg.general.training_image_list_file,
-      target_landmark_label=cfg.general.target_landmark_label,
-      target_organ_label=cfg.general.target_organ_label,
-      crop_size=cfg.dataset.crop_size,
-      crop_spacing=cfg.dataset.crop_spacing,
-      sampling_method=cfg.dataset.sampling_method,
-      sampling_size=cfg.dataset.sampling_size,
-      positive_upper_bound=cfg.dataset.positive_upper_bound,
-      negative_lower_bound=cfg.dataset.negative_lower_bound,
-      num_pos_patches_per_image=cfg.dataset.num_pos_patches_per_image,
-      num_neg_patches_per_image=cfg.dataset.num_neg_patches_per_image,
-      augmentation_turn_on=cfg.augmentation.turn_on,
-      augmentation_orientation_axis=cfg.augmentation.orientation_axis,
-      augmentation_orientation_radian=cfg.augmentation.orientation_radian,
-      augmentation_translation=cfg.augmentation.translation,
-      interpolation=cfg.dataset.interpolation,
-      crop_normalizers=cfg.dataset.crop_normalizers)
+    train_data_loader, num_modality, num_landmark_classes, num_train_cases = \
+        get_landmark_detection_dataloader(cfg, 'train')
 
-    sampler = EpochConcateSampler(dataset, cfg.train.epochs)
-    data_loader = DataLoader(dataset, sampler=sampler, batch_size=cfg.train.batch_size,
-                             num_workers=cfg.train.num_threads, pin_memory=True)
-
-    net_module = importlib.import_module('detection.network.' + cfg.net.name)
-    net = net_module.Net(dataset.num_modality(), dataset.num_landmark_classes)
+    net_module = importlib.import_module('detection3d.network.' + cfg.net.name)
+    net = net_module.Net(num_modality, num_landmark_classes)
     max_stride = net.max_stride()
     net_module.parameters_kaiming_init(net)
     if cfg.general.num_gpus > 0:
@@ -96,7 +71,7 @@ def train(config_file):
     if cfg.landmark_loss.name == 'Focal':
         # reuse focal loss if exists
         loss_func = FocalLoss(
-          class_num=dataset.num_landmark_classes, alpha=cfg.landmark_loss.focal_obj_alpha,
+          class_num=num_landmark_classes, alpha=cfg.landmark_loss.focal_obj_alpha,
           gamma=cfg.landmark_loss.focal_gamma,use_gpu=cfg.general.num_gpus > 0
         )
     else:
@@ -105,10 +80,10 @@ def train(config_file):
     writer = SummaryWriter(os.path.join(cfg.general.save_dir, 'tensorboard'))
 
     batch_idx = batch_start
-    data_iter = iter(data_loader)
+    data_iter = iter(train_data_loader)
 
     # loop over batches
-    for i in range(len(data_loader)):
+    for i in range(len(train_data_loader)):
         begin_t = time.time()
 
         crops, organ_masks, landmark_masks, landmark_coords, frames, filenames = data_iter.next()
@@ -146,7 +121,7 @@ def train(config_file):
         # update weights
         opt.step()
 
-        epoch_idx = batch_idx * cfg.train.batch_size // len(dataset)
+        epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
         batch_idx += 1
         batch_duration = time.time() - begin_t
         sample_duration = batch_duration * 1.0 / cfg.train.batch_size
@@ -159,7 +134,7 @@ def train(config_file):
         # save checkpoint
         if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0):
             if last_save_epoch != epoch_idx:
-                save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, dataset.num_modality())
+                save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
                 last_save_epoch = epoch_idx
 
         writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)

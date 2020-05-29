@@ -1,65 +1,69 @@
 from easydict import EasyDict as edict
-from detection3d.utils.normalizer import FixedNormalizer, AdaptiveNormalizer
-
+from segmentation3d.utils.normalizer import FixedNormalizer, AdaptiveNormalizer
 
 __C = edict()
 cfg = __C
 
-
 ##################################
 # general parameters
 ##################################
-
 __C.general = {}
 
-# image-segmentation pair list
-__C.general.imseg_list = '/shenlab/lab_stor6/qinliu/CT_Dental/datasets/train.txt'
+__C.general.training_image_list_file = '/shenlab/lab_stor6/projects/CT_Dental/dataset/landmark_detection/train_server.csv'
 
-# the output of training models and logs
-__C.general.save_dir = '/shenlab/lab_stor6/qinliu/CT_Dental/models/model_0430_2020'
+__C.general.validation_image_list_file = ''
 
-# the model scale
-__C.general.model_scale = 'fine'
+# landmark label starts from 1, 0 represents the background.
+__C.general.target_landmark_label = {
+    'S': 1,
+    'Gb': 2,
+    'Rh': 4,
+    'Fz-R': 5,
+    'Fz-L': 6,
+    'Ft-R': 7,
+    'Ft-L': 8,
+    'SOF-R': 15,
+    'SOF-L': 16,
+    'Ba': 21,
+    'FMP': 22,
+    'GFC-R': 23,
+    'GFC-L': 24,
+    'M-R': 27,
+    'M-L': 28,
+    'Po-R': 29,
+    'Po-L': 32,
+    'ANS': 35,
+    'PNS': 41,
+    'B': 80,
+    'Me': 83,
+    'Go-R': 95,
+    'Go-L': 101
+}
 
-# continue training from certain epoch, -1 to train from scratch
+__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0502_2020/batch_1'
+
 __C.general.resume_epoch = -1
 
-# the number of GPUs used in training. Set to 0 if using cpu only.
-__C.general.num_gpus = 3
-
-# random seed used in training (debugging purpose)
-__C.general.seed = 0
-
+__C.general.num_gpus = 1
 
 ##################################
-# data set parameters
+# dataset parameters
 ##################################
-
 __C.dataset = {}
 
-# the number of classes
-__C.dataset.num_classes = 3
+__C.dataset.crop_spacing = [2, 2, 2]      # mm
 
-# the resolution on which segmentation is performed
-__C.dataset.spacing = [0.4, 0.4, 0.4]
+__C.dataset.crop_size = [96, 96, 96]   # voxel
 
-# the sampling crop size, e.g., determine the context information
-__C.dataset.crop_size = [128, 128, 128]
+__C.dataset.sampling_size = [6, 6, 6]      # voxel
 
-# sampling method:
-# 1) GLOBAL: sampling crops randomly in the entire image domain
-# 2) MASK: sampling crops randomly within segmentation mask
-# 3) HYBRID: Sampling crops randomly with both GLOBAL and MASK methods
-# 4) CENTER: sampling crops in the image center
-__C.dataset.sampling_method = 'HYBRID'
+__C.dataset.positive_upper_bound = 3    # voxel
 
-# translation augmentation (unit: mm)
-__C.dataset.random_translation = [64, 64, 5]
+__C.dataset.negative_lower_bound = 6    # voxel
 
-# linear interpolation method:
-# 1) NN: nearest neighbor interpolation
-# 2) LINEAR: linear interpolation
-__C.dataset.interpolation = 'LINEAR'
+__C.dataset.num_pos_patches_per_image = 8
+
+__C.dataset.num_neg_patches_per_image = 16
 
 # crop intensity normalizers (to [-1,1])
 # one normalizer corresponds to one input modality
@@ -67,67 +71,73 @@ __C.dataset.interpolation = 'LINEAR'
 # 2) AdaptiveNormalizer: use minimum and maximum intensity of crop to normalize intensity
 __C.dataset.crop_normalizers = [AdaptiveNormalizer()]
 
+# sampling method:
+# 1) GLOBAL: sampling crops randomly in the entire image domain
+# 2) MASK: sampling crops randomly within segmentation mask
+# 3) HYBRID: Sampling crops randomly with both GLOBAL and MASK methods
+# 4) CENTER: sampling crops in the image center
+__C.dataset.sampling_method = 'GLOBAL'
+
+# linear interpolation method:
+# 1) NN: nearest neighbor interpolation
+# 2) LINEAR: linear interpolation
+__C.dataset.interpolation = 'LINEAR'
+
 ##################################
-# training loss
+# data augmentation parameters
 ##################################
+__C.augmentation = {}
 
-__C.loss = {}
+__C.augmentation.turn_on = False
 
-# the name of loss function to use
-# Focal: Focal loss, supports binary-class and multi-class segmentation
-# Dice: Dice Similarity Loss which supports binary and multi-class segmentation
-__C.loss.name = 'Focal'
+__C.augmentation.orientation_axis = [0, 0, 0]  # [x,y,z], axis = [0,0,0] will set it as random axis.
 
-# the weight for each class including background class
-# weights will be normalized
-__C.loss.obj_weight = [1/3, 1/3, 1/3]
+__C.augmentation.orientation_radian = [-30, 30]  # range of rotation in degree, 1 degree = 0.0175 radian
 
-# the gamma parameter in focal loss
-__C.loss.focal_gamma = 2
+__C.augmentation.translation = [10, 10, 10]  # mm
 
+##################################
+# loss function
+##################################
+__C.landmark_loss = {}
+
+__C.landmark_loss.name = 'Focal'          # 'Dice', or 'Focal'
+
+__C.landmark_loss.focal_obj_alpha = [0.75] * 24  # class balancing weight for focal loss
+
+__C.landmark_loss.focal_gamma = 2         # gamma in pow(1-p,gamma) for focal loss
 
 ##################################
 # net
 ##################################
-
 __C.net = {}
 
-# the network name
-__C.net.name = 'vbnet'
-
-# enable uncertainty by trun on drop out layers in the segmentation net
-__C.net.dropout_turn_on = False
+__C.net.name = 'vdnet'
 
 ##################################
 # training parameters
 ##################################
-
 __C.train = {}
 
-# the number of training epochs
-__C.train.epochs = 1101
+__C.train.epochs = 2001
 
-# the number of samples in a batch
-__C.train.batchsize = 6
+__C.train.batch_size = 4
 
-# the number of threads for IO
-__C.train.num_threads = 6
+__C.train.num_threads = 4
 
-# the learning rate
 __C.train.lr = 1e-4
 
-# the beta in Adam optimizer
 __C.train.betas = (0.9, 0.999)
 
-# the number of batches to save model
 __C.train.save_epochs = 100
 
-
-###################################
+##################################
 # debug parameters
-###################################
-
+##################################
 __C.debug = {}
+
+# random seed used in training
+__C.debug.seed = 0
 
 # whether to save input crops
 __C.debug.save_inputs = False
