@@ -86,11 +86,11 @@ def train(config_file):
     for i in range(len(train_data_loader)):
         begin_t = time.time()
 
-        crops, organ_masks, landmark_masks, landmark_coords, frames, filenames = data_iter.next()
+        crops, landmark_masks, landmark_coords, frames, filenames = data_iter.next()
 
         if cfg.general.num_gpus > 0:
-            crops, organ_masks, landmark_masks, landmark_coords = \
-              crops.cuda(), organ_masks.cuda(), landmark_masks.cuda(), landmark_coords.cuda()
+            crops, landmark_masks, landmark_coords = \
+              crops.cuda(), landmark_masks.cuda(), landmark_coords.cuda()
 
         # clear previous gradients
         opt.zero_grad()
