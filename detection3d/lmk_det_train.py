@@ -10,13 +10,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
-from segmentation3d.utils.image_tools import save_intermediate_results
-from segmentation3d.dataloader.sampler import EpochConcateSampler
-from segmentation3d.loss.focal_loss import FocalLoss
-from segmentation3d.utils.file_io import load_config, setup_logger
-from segmentation3d.utils.model_io import load_checkpoint
-from detection.dataloader.dataset import LandmarkDetectionDataset
-from detection.utils.model_io import save_checkpoint
+from detection3d.utils.image_tools import save_intermediate_results
+from detection3d.dataset.landmark_dataset import LandmarkDetectionDataset
+from detection3d.dataset.sampler import EpochConcateSampler
+from detection3d.loss.focal_loss import FocalLoss
+from detection3d.utils.file_io import load_config, setup_logger
+from detection3d.utils.model_io import load_checkpoint, save_checkpoint
 
 
 def train(config_file):

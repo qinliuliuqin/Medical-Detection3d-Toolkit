@@ -28,6 +28,31 @@ def get_checkpoint_folder(chk_root, epoch):
   return os.path.join(chk_root, 'chk_{}'.format(epoch))
 
 
+def load_checkpoint(epoch_idx, net, opt, save_dir):
+    """ load network parameters from directory
+    :param epoch_idx: the epoch idx of model to load
+    :param net: the network object
+    :param opt: the optimizer object
+    :param save_dir: the save directory
+    :return: loaded epoch index, loaded batch index
+    """
+    # load network parameters
+    chk_file = os.path.join(save_dir, 'checkpoints', 'chk_{}'.format(epoch_idx), 'params.pth')
+    assert os.path.isfile(chk_file), 'checkpoint file not found: {}'.format(chk_file)
+
+    state = torch.load(chk_file)
+    net.load_state_dict(state['state_dict'])
+
+    # load optimizer state
+    opt_file = os.path.join(save_dir, 'checkpoints', 'chk_{}'.format(epoch_idx), 'optimizer.pth')
+    assert os.path.isfile(opt_file), 'optimizer file not found: {}'.format(chk_file)
+
+    opt_state = torch.load(opt_file)
+    opt.load_state_dict(opt_state)
+
+    return state['epoch'], state['batch']
+
+
 def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality):
     """ save model and parameters into a checkpoint file (.pth)
 
