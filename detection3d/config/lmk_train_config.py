@@ -73,9 +73,6 @@ __C.dataset.crop_normalizers = [AdaptiveNormalizer()]
 
 # sampling method:
 # 1) GLOBAL: sampling crops randomly in the entire image domain
-# 2) MASK: sampling crops randomly within segmentation mask
-# 3) HYBRID: Sampling crops randomly with both GLOBAL and MASK methods
-# 4) CENTER: sampling crops in the image center
 __C.dataset.sampling_method = 'GLOBAL'
 
 # linear interpolation method:

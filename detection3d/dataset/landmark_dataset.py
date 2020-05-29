@@ -72,7 +72,6 @@ class LandmarkDetectionDataset(Dataset):
                mode,
                image_list_file,
                target_landmark_label,
-               target_organ_label,
                crop_size,
                crop_spacing,
                sampling_method,
@@ -98,7 +97,6 @@ class LandmarkDetectionDataset(Dataset):
     self.landmark_coords_dict = read_landmark_coords(
       self.image_name_list, self.landmark_file_path, self.target_landmark_label
     )
-    self.target_organ_label = target_organ_label
     self.crop_spacing = np.array(crop_spacing, dtype=np.float32)
     self.crop_size = np.array(crop_size, dtype=np.float32)
     self.sampling_method = sampling_method
@@ -111,7 +109,6 @@ class LandmarkDetectionDataset(Dataset):
     assert self.num_neg_patches_per_image >= 0
     # + 1 for background
     self.num_landmark_classes = len(target_landmark_label) + 1
-    self.num_organ_classes = len(target_organ_label) + 1
     self.augmentation_turn_on = augmentation_turn_on
     self.augmentation_orientation_radian = augmentation_orientation_radian
     self.augmentation_orientation_axis = augmentation_orientation_axis
@@ -237,16 +234,6 @@ class LandmarkDetectionDataset(Dataset):
 
     return reordered_selected_mask
 
-  def get_random_organ_label(self):
-    """
-    Get a random organ label
-    :return: Organ label
-    """
-    organ_name_list = list(self.target_organ_label.keys())
-    random_organ_name = organ_name_list[np.random.randint(0, len(organ_name_list))]
-    random_organ_label = self.target_organ_label[random_organ_name]
-    return random_organ_label
-
   def __getitem__(self, index):
     """ get a training sample - image(s) and segmentation pair
     :param index:  the sample index
@@ -261,38 +248,12 @@ class LandmarkDetectionDataset(Dataset):
     images.append(image)
 
     landmark_coords = self.landmark_coords_dict[image_name]
-
-    organ_mask_path = self.organ_mask_path[index]
-    organ_mask = sitk.ReadImage(organ_mask_path)
-
     landmark_mask_path = self.landmark_mask_path[index]
     landmark_mask = sitk.ReadImage(landmark_mask_path)
 
     # sampling a crop center
-    if self.sampling_method == 'CENTER':
-      center = self.center_sample(organ_mask)
-
-    elif self.sampling_method == 'GLOBAL':
-      center = self.global_sample(organ_mask)
-
-    elif self.sampling_method == 'MASK':
-      random_organ_label = self.get_random_organ_label()
-      centers = select_random_voxels_in_multi_class_mask(organ_mask, 1, random_organ_label)
-      if len(centers) > 0:
-        center = organ_mask.TransformIndexToPhysicalPoint([int(centers[0][idx]) for idx in range(3)])
-      else:  # if no segmentation
-        center = self.global_sample(organ_mask)
-
-    elif self.sampling_method == 'HYBRID':
-      if index % 2:
-        center = self.global_sample(organ_mask)
-      else:
-        random_organ_label = self.get_random_organ_label()
-        centers = select_random_voxels_in_multi_class_mask(organ_mask, 1, random_organ_label)
-        if len(centers) > 0:
-          center = organ_mask.TransformIndexToPhysicalPoint([int(centers[0][idx]) for idx in range(3)])
-        else:  # if no segmentation
-          center = self.global_sample(organ_mask)
+    if self.sampling_method == 'GLOBAL':
+      center = self.global_sample(landmark_mask)
 
     else:
       raise ValueError('Only support CENTER, GLOBAL, MASK, and HYBRID sampling methods')
@@ -308,7 +269,6 @@ class LandmarkDetectionDataset(Dataset):
       if self.crop_normalizers[idx] is not None:
         images[idx] = self.crop_normalizers[idx](images[idx])
 
-    organ_mask = crop_image(organ_mask, center, self.crop_size, self.crop_spacing, 'NN')
     landmark_mask = crop_image(landmark_mask, center, self.crop_size, self.crop_spacing, 'NN')
     landmark_mask = self.select_samples_in_the_landmark_mask(
       landmark_mask, self.landmark_coords_dict[image_name]
@@ -316,7 +276,6 @@ class LandmarkDetectionDataset(Dataset):
 
     # convert image and masks to tensors
     image_tensor = convert_image_to_tensor(images)
-    organ_mask_tensor = convert_image_to_tensor(organ_mask)
     landmark_mask_tensor = convert_image_to_tensor(landmark_mask)
 
     # convert landmark coords to tensor
@@ -330,5 +289,5 @@ class LandmarkDetectionDataset(Dataset):
     # image frame
     image_frame = get_image_frame(images[0])
 
-    return image_tensor, organ_mask_tensor, landmark_mask_tensor, \
+    return image_tensor, landmark_mask_tensor, \
            landmark_coords_tensor, image_frame, image_name
