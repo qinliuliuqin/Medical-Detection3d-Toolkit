@@ -40,7 +40,7 @@ __C.general.target_landmark_label = {
     'Go-L': 101
 }
 
-__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0502_2020/batch_1'
+__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0529_2020_debug'
 
 __C.general.resume_epoch = -1
 
