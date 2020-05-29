@@ -32,12 +32,12 @@ def train(config_file):
         if cfg.general.resume_epoch < 0:
             shutil.rmtree(cfg.general.save_dir)
             os.makedirs(cfg.general.save_dir)
-            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'train_config.py'))
+            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
         else:
-            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'train_config.py'))
+            shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
     else:
         os.makedirs(cfg.general.save_dir)
-        shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'train_config.py'))
+        shutil.copy(config_file, os.path.join(cfg.general.save_dir, 'lmk_train_config.py'))
 
     # enable logging
     log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')

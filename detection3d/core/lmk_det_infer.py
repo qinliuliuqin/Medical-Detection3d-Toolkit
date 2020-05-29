@@ -54,12 +54,12 @@ def load_det_model(model_folder, gpu_id=0):
     latest_checkpoint_dir = get_checkpoint_folder(
         os.path.join(model_folder, 'checkpoints'), -1)
     infer_cfg = load_config(
-        os.path.join(latest_checkpoint_dir, 'infer_config.py'))
+        os.path.join(latest_checkpoint_dir, 'lmk_infer_config.py'))
 
     model = edict()
     model.infer_cfg = infer_cfg
     train_cfg = load_config(
-        os.path.join(latest_checkpoint_dir, 'train_config.py'))
+        os.path.join(latest_checkpoint_dir, 'lmk_train_config.py'))
     model.train_cfg = train_cfg
 
     # load model state

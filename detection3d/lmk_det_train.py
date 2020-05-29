@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description=long_description)
 
     parser.add_argument('-i', '--input',
-                        default='/home/ql/projects/Medical-Detection3d-Toolkit/detection3d/config/train_config.py',
+                        default='/home/ql/projects/Medical-Detection3d-Toolkit/detection3d/config/lmk_train_config.py',
                         help='configure file for medical image segmentation training.')
     args = parser.parse_args()
 
