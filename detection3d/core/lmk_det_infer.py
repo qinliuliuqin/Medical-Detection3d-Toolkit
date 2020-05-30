@@ -89,8 +89,8 @@ def load_det_model(model_folder, gpu_id=0):
     model.net = net
     model.crop_size, model.crop_spacing, model.max_stride, model.interpolation = \
         state['crop_size'], state['crop_spacing'], state['max_stride'], state['interpolation']
-    model.in_channels, model.num_organ_classes, model.num_landmark_classes = \
-        state['in_channels'], state['num_organ_classes'], state['num_landmark_classes']
+    model.in_channels, model.num_landmark_classes = \
+        state['in_channels'], state['num_landmark_classes']
 
     model.crop_normalizers = []
     for crop_normalizer in state['crop_normalizers']:
