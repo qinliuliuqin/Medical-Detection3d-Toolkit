@@ -51,14 +51,13 @@ def read_image_list(image_list_file, mode):
   image_path_list = images_df['image_path'].tolist()
 
   if mode == 'test':
-    return image_name_list, image_path_list
+    return image_name_list, image_path_list, None, None
 
   elif mode == 'train' or mode == 'validation':
     landmark_file_path_list = images_df['landmark_file_path'].tolist()
     landmark_mask_path_list = images_df['landmark_mask_path'].tolist()
-    organ_mask_path_list = images_df['organ_mask_path'].tolist()
     return image_name_list, image_path_list, landmark_file_path_list, \
-           landmark_mask_path_list, organ_mask_path_list
+           landmark_mask_path_list
 
   else:
     raise ValueError('Unsupported mode type.')
@@ -89,8 +88,8 @@ class LandmarkDetectionDataset(Dataset):
     self.mode = mode
     assert self.mode == 'train' or self.mode == 'Train'
 
-    self.image_name_list, self.image_path_list, self.landmark_file_path, \
-    self.landmark_mask_path, self.organ_mask_path = read_image_list(image_list_file, self.mode)
+    self.image_name_list, self.image_path_list, self.landmark_file_path, self.landmark_mask_path = \
+      read_image_list(image_list_file, self.mode)
     assert len(self.image_name_list) == len(self.image_path_list)
 
     self.target_landmark_label = target_landmark_label
