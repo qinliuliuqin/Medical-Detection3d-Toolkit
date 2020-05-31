@@ -1,4 +1,4 @@
-from __future__ import print_function
+import argparse
 import SimpleITK as sitk
 import numpy as np
 import os
@@ -9,6 +9,9 @@ from detection3d.utils.landmark_utils import is_world_coordinate_valid, is_voxel
 
 
 def gen_single_landmark_mask(ref_image, landmark_df, spacing, pos_upper_bound, neg_lower_bound):
+  """
+  Generate landmark mask for a single image.
+  """
   assert isinstance(ref_image, sitk.Image)
 
   ref_image = resample_spacing(ref_image, spacing, 1, 'NN')
@@ -42,7 +45,9 @@ def gen_single_landmark_mask(ref_image, landmark_df, spacing, pos_upper_bound, n
 
 def gen_landmark_mask_batch(image_folder, landmark_folder, target_landmark_label,
                             spacing, pos_upper_bound, neg_lower_bound, landmark_mask_save_folder):
-
+  """
+  Generate landmark mask for a batch of images
+  """
   # get image name list
   landmark_files = os.listdir(landmark_folder)
   image_names = []
@@ -70,37 +75,57 @@ def gen_landmark_mask_batch(image_folder, landmark_folder, target_landmark_label
         target_landmark_df[landmark_name]['y'] = float(y)
         target_landmark_df[landmark_name]['z'] = float(z)
 
-    image = sitk.ReadImage(os.path.join(image_folder, image_name, 'org.mha'))
+    image = sitk.ReadImage(os.path.join(image_folder, image_name, 'org.nii.gz'))
     landmark_mask = gen_single_landmark_mask(
       image, target_landmark_df, spacing, pos_upper_bound, neg_lower_bound
     )
 
-    sitk.WriteImage(landmark_mask, os.path.join(landmark_mask_save_folder, '{}.mha'.format(image_name)), True)
+    sitk.WriteImage(landmark_mask, os.path.join(landmark_mask_save_folder, '{}.nii.gz'.format(image_name)), True)
 
 
-def gen_landmark_2mm():
-  batch_idx = 3
-  image_folder = '/mnt/projects/CT_Dental/data'
-  landmark_folder = '/mnt/projects/CT_Dental/landmark'
-  landmark_mask_save_folder = '/mnt/projects/CT_Dental/landmark_mask/batch_{}_2.0mm'.format(batch_idx)
-  landmark_label_file = '/home/ql/projects/dental_image_analysis/detection/scripts/batch_{}_2mm.csv'.format(batch_idx)
-  spacing = [2.0, 2.0, 2.0]  # mm
-  pos_upper_bound = 3  # voxel
-  neg_lower_bound = 6  # voxel
-
+def generate_landmark_mask(image_folder, landmark_folder, landmark_label_file, spacing, bound, save_folder):
+  """
+  Generate landmark mask.
+  """
   landmark_label_df = pd.read_csv(landmark_label_file)
   target_landmark_label = {}
   for row in landmark_label_df.iterrows():
     target_landmark_label.update({row[1]['landmark_name']: row[1]['landmark_label']})
 
+  pos_upper_bound, neg_lower_bound = bound[0], bound[1]
   gen_landmark_mask_batch(image_folder, landmark_folder, target_landmark_label, spacing,
-                          pos_upper_bound, neg_lower_bound, landmark_mask_save_folder)
+                          pos_upper_bound, neg_lower_bound, save_folder)
 
+
+def main():
+  long_description = 'Generate landmark mask for landmark detection.'
+
+  default_input = '/mnt/projects/CT_Dental/data_v2'
+  default_landmark = '/mnt/projects/CT_Dental/landmark_v2'
+  default_output = '/mnt/projects/CT_Dental/landmark_mask_v2'
+  default_label = '/home/ql/projects/Medical-Detection3d-Toolkit/detection3d/scripts/landmark_label_file.csv'
+  default_spacing = [0.4, 0.4, 0.4]
+  default_pos_upper_bound = 3
+  default_neg_lower_bound = 6
+
+  parser = argparse.ArgumentParser(description=long_description)
+  parser.add_argument('-i', '--input', default=default_input,
+                      help='input folder for intensity images.')
+  parser.add_argument('-l', '--landmark', default=default_landmark,
+                      help='landmark folder.')
+  parser.add_argument('-o', '--output', default=default_output,
+                      help='output folder for the landmark mask')
+  parser.add_argument('-n', '--label', default=default_label,
+                      help='the label file containing the selected landmark names.')
+  parser.add_argument('-s', '--spacing', default=default_spacing,
+                      help='the spacing of the landmark mask.')
+  parser.add_argument('-b', '--bound', default=[default_pos_upper_bound, default_neg_lower_bound],
+                      help='the pos. upper bound and the neg. lower bound of the landmark mask.')
+
+  args = parser.parse_args()
+  generate_landmark_mask(args.input, args.landmark, args.label, args.spacing, args.bound, args.output)
 
 
 if __name__ == '__main__':
 
-  steps = [1]
-
-  if 1 in steps:
-    gen_landmark_2mm()
+  main()
