@@ -15,32 +15,16 @@ __C.general.validation_image_list_file = ''
 
 # landmark label starts from 1, 0 represents the background.
 __C.general.target_landmark_label = {
-    'S': 1,
-    'Gb': 2,
-    'Rh': 4,
-    'Fz-R': 5,
-    'Fz-L': 6,
-    'Ft-R': 7,
-    'Ft-L': 8,
-    'SOF-R': 15,
-    'SOF-L': 16,
-    'Ba': 21,
-    'FMP': 22,
-    'GFC-R': 23,
-    'GFC-L': 24,
-    'M-R': 27,
-    'M-L': 28,
-    'Po-R': 29,
-    'Po-L': 32,
-    'ANS': 35,
-    'PNS': 41,
-    'B': 80,
-    'Me': 83,
-    'Go-R': 95,
-    'Go-L': 101
+    'Ex-R': 5,
+    'Ex-L': 6,
+    'Nb-R': 21,
+    'Nb-L': 22,
+    'Ls': 26,
+    'Sl': 34,
+    'C': 39
 }
 
-__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0529_2020_debug'
+__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0531_2020/batch_5'
 
 __C.general.resume_epoch = -1
 
@@ -51,7 +35,7 @@ __C.general.num_gpus = 1
 ##################################
 __C.dataset = {}
 
-__C.dataset.crop_spacing = [2, 2, 2]      # mm
+__C.dataset.crop_spacing = [1.5, 1.5, 1.5]      # mm
 
 __C.dataset.crop_size = [96, 96, 96]   # voxel
 
@@ -100,7 +84,7 @@ __C.landmark_loss = {}
 
 __C.landmark_loss.name = 'Focal'          # 'Dice', or 'Focal'
 
-__C.landmark_loss.focal_obj_alpha = [0.75] * 24  # class balancing weight for focal loss
+__C.landmark_loss.focal_obj_alpha = [0.75] * 8  # class balancing weight for focal loss
 
 __C.landmark_loss.focal_gamma = 2         # gamma in pow(1-p,gamma) for focal loss
 
