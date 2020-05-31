@@ -243,12 +243,12 @@ class LandmarkDetectionDataset(Dataset):
     image_path = self.image_path_list[index]
 
     images = []
-    image = sitk.ReadImage(image_path)
+    image = sitk.ReadImage(image_path, sitk.sitkFloat32)
     images.append(image)
 
     landmark_coords = self.landmark_coords_dict[image_name]
     landmark_mask_path = self.landmark_mask_path[index]
-    landmark_mask = sitk.ReadImage(landmark_mask_path)
+    landmark_mask = sitk.ReadImage(landmark_mask_path, sitk.sitkFloat32)
 
     # sampling a crop center
     if self.sampling_method == 'GLOBAL':
