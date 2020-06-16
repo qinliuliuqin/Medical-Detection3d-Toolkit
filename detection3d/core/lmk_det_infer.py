@@ -205,7 +205,7 @@ def detection_single_image(image, image_name, model, gpu_id, save_prob, save_fol
             )
         else:
             print("world coordinate of volume {0} landmark {1} is not detected.".format(image_name, i))
-            detected_landmark.append([landmark_name, -1, -1, -1])
+            detected_landmark.append([landmark_name, 0, 0, 0])
 
     detected_landmark_df = pd.DataFrame(data=detected_landmark, columns=['name', 'x', 'y', 'z'])
 
