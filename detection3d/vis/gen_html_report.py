@@ -129,7 +129,7 @@ def gen_html_report(landmarks_list, usage_flag, output_folder):
         label_landmark_world = labelled_landmarks[image_name][landmark_name]
         document_text = \
           gen_row_for_html(usage_flag, image_link_template, error_info_template,
-                           document_text, image_list, image_idx, landmark_idx,
+                           document_text, image_list, image_idx, landmark_name,
                            [label_landmark_world], None)
         
     elif usage_flag == 2:
