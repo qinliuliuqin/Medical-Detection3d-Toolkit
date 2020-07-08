@@ -9,7 +9,7 @@ from detection3d.utils.landmark_utils import merge_landmark_dataframes
 from detection3d.dataset.landmark_dataset import read_image_list
 from detection3d.utils.landmark_utils import is_voxel_coordinate_valid, is_world_coordinate_valid
 
-
+# Note: landmarks L6CF-R, L6CF-L, L6DC-R, L6DC-L are not detected.
 def dental_detection_batch(input_path, model_folder, gpu_id, output_folder):
     """
 
