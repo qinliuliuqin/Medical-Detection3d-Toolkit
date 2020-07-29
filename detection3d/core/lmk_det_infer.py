@@ -70,7 +70,7 @@ def load_det_model(model_folder, gpu_id=0):
         # load network module
         state = torch.load(chk_file)
         net_module = importlib.import_module(
-            'detection.network.' + state['net'])
+            'detection3d.network.' + state['net'])
         net = net_module.Net(state['in_channels'], state['num_landmark_classes'] + 1)
         net = nn.parallel.DataParallel(net, device_ids=[0])
         net.load_state_dict(state['state_dict'])
@@ -81,7 +81,7 @@ def load_det_model(model_folder, gpu_id=0):
     else:
         state = torch.load(chk_file, map_location='cpu')
         net_module = importlib.import_module(
-            'detection.network.' + state['net'])
+            'detection3d.network.' + state['net'])
         net = net_module.Net(state['in_channels'], state['num_landmark_classes'] + 1)
         net.load_state_dict(state['state_dict'])
         net.eval()
