@@ -11,7 +11,6 @@ Landmark detection engine for 3D medical images
 $ git clone https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit.git
 ```
 2. Generate the landmark mask using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/scripts/gen_landmark_mask.py).
-
 An example landmark mask can be found [here](https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/test_data/landmark_mask.mha). 
 
 In the landmark mask, there are three types of voxels:
