@@ -20,4 +20,8 @@ In the landmark mask, there are three types of voxels:
 |0| background voxels
 |-1| invalid voxles  
 
+3. Generate the training file, [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/train.csv) is an example.
+
+4. Train the model using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/lmk_det_train.py). [Here]()https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/model_0531_2020/batch_1/checkpoints/chk_1200/lmk_train_config.py is an example configuration file.
+
 # Inference
