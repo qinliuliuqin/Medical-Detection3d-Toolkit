@@ -3,6 +3,7 @@ Landmark detection engine for 3D medical images
 
 # Framework
 ![avatar](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/framework.png)
+
 We use [V-Net](http://far.in.tum.de/pub/milletari2016Vnet/milletari2016Vnet.pdf)-a variant of 3D U-Net-for landmark detection. The overall landmark detection pipeline is very similar to the segmentation pipeline. 
 
 ## Training
