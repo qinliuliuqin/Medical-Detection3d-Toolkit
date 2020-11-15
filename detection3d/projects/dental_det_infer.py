@@ -149,10 +149,21 @@ def dental_detection(input, model_folder, gpu_id, output_csv_file):
 def main():
     long_description = 'Inference engine for 3d medical image landmark detection' \
 
-    default_input = '/shenlab/lab_stor6/projects/CT_Dental/data/case_176_ct_normal/org.mha'
-    default_model = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0514_2020'
-    default_output = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/results/model_0514_2020/case_176_ct_normal.csv'
-    default_gpu_id = 1
+    default_input = '/shenlab/lab_stor6/projects/CT_Dental/dataset/segmentation/data_v1/test.csv'
+    #default_input = '/shenlab/lab_stor6/projects/CT_Dental/data/case_176_ct_normal/org.mha'
+    #default_input = '/shenlab/lab_stor6/deqiang/CMF_CBCT_Unlabeled/KCK068526/sub_KCK068526_origin.nii.gz'
+    #default_input = '/shenlab/lab_stor6/deqiang/CMF_CBCT_Unlabeled/LHC068906/sub_LHC068906_origin.nii.gz'
+    #default_input = '/shenlab/lab_stor6/deqiang/CMF_CBCT_Unlabeled/LSC068355/sub_LSC068355_origin.nii.gz'
+    #default_input = '/shenlab/lab_stor6/projects/CT_Dental/test_data/Pre_Post_Facial_Data/14_pairs_09212020'
+    #default_model = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0514_2020'
+    default_model = '/home/qinliu19/projects/Model-Zoo/Dental/detection/landmark/model_0514_2020'
+    #default_output = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/results/model_0514_2020/case_176_ct_normal.csv'
+    #default_output = '/shenlab/lab_stor6/qinliu/CT_Dental/results/CMF_CBCT_Unlabeled/landmark/'
+    #default_output = '/shenlab/lab_stor6/qinliu/CT_Dental/results/CMF_CBCT_Unlabeled/landmark/sub_LHC068906_origin_bones.csv'
+    #default_output = '/shenlab/lab_stor6/qinliu/CT_Dental/results/CMF_CBCT_Unlabeled/landmark/sub_LSC068355_origin_bones.csv'
+    #default_output = '/shenlab/lab_stor6/projects/CT_Dental/results/14_pairs_09212020'
+    default_output = '/shenlab/lab_stor6/projects/CT_Dental/results/model_0514_2020/det_benchmark'
+    default_gpu_id = 0
 
     parser = argparse.ArgumentParser(description=long_description)
     parser.add_argument('-i', '--input', default=default_input,
