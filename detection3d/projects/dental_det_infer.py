@@ -10,7 +10,7 @@ from detection3d.dataset.landmark_dataset import read_image_list
 from detection3d.utils.landmark_utils import is_voxel_coordinate_valid, is_world_coordinate_valid
 
 # Note: landmarks L6CF-R, L6CF-L, L6DC-R, L6DC-L won't be detected because they are too close.
-def dental_detection_batch(input_path, model_folder, gpu_id, output_folder):
+def dental_detection_batch(input_path, model_folder, structure, gpu_id, output_folder):
     """
 
     :param input_path:
@@ -53,14 +53,68 @@ def dental_detection_batch(input_path, model_folder, gpu_id, output_folder):
 
         output_csv_file = os.path.join(output_folder, '{}.csv'.format(file_name_list[i]))
         begin = time.time()
-        dental_detection(file_path, model_folder, gpu_id, output_csv_file)
+        if structure == 0:
+            dental_detection_bone(file_path, model_folder, gpu_id, output_csv_file)
+
+        elif structure == 1:
+            dental_detection_face(file_path, model_folder, gpu_id, output_csv_file)
+
         prediction_time = time.time() - begin
 
         print('Prediction: {:.2f} s'.format(prediction_time))
 
 
+def dental_detection_face(input, model_folder, gpu_id, output_csv_file):
+    """
+    :param input:
+    :param model_folder:
+    :param gpu_id:
+    :param output_csv_file:
+    :return:
+    """
+    assert output_csv_file.endswith('.csv')
 
-def dental_detection(input, model_folder, gpu_id, output_csv_file):
+    image = sitk.ReadImage(input, sitk.sitkFloat32)
+    image_name = os.path.basename(input)
+
+    landmark_dataframes = []
+
+    # detect batch 1
+    batch_1_model = load_det_model(os.path.join(model_folder, 'batch_1'))
+    landmark_batch_1 = detection_single_image(image, image_name, batch_1_model, gpu_id, None, None)
+    del batch_1_model
+    landmark_dataframes.append(landmark_batch_1)
+
+    # detect batch 2
+    batch_2_model = load_det_model(os.path.join(model_folder, 'batch_2'))
+    landmark_batch_2 = detection_single_image(image, image_name, batch_2_model, gpu_id, None, None)
+    del batch_2_model
+    landmark_dataframes.append(landmark_batch_2)
+
+    # detect batch 3
+    batch_3_model = load_det_model(os.path.join(model_folder, 'batch_3'))
+    landmark_batch_3 = detection_single_image(image, image_name, batch_3_model, gpu_id, None, None)
+    del batch_3_model
+    landmark_dataframes.append(landmark_batch_3)
+
+    # detect batch 4
+    batch_4_model = load_det_model(os.path.join(model_folder, 'batch_4'))
+    landmark_batch_4 = detection_single_image(image, image_name, batch_4_model, gpu_id, None, None)
+    del batch_4_model
+    landmark_dataframes.append(landmark_batch_4)
+
+    # detect batch 5
+    batch_5_model = load_det_model(os.path.join(model_folder, 'batch_5'))
+    landmark_batch_5 = detection_single_image(image, image_name, batch_5_model, gpu_id, None, None)
+    del batch_5_model
+    landmark_dataframes.append(landmark_batch_5)
+
+    merged_landmark_dataframes = merge_landmark_dataframes(landmark_dataframes)
+    merged_landmark_dataframes.sort_values(by=['name'], inplace=True)
+    merged_landmark_dataframes.to_csv(output_csv_file, index=False)
+
+
+def dental_detection_bone(input, model_folder, gpu_id, output_csv_file):
     """
 
     :param input:
@@ -170,13 +224,15 @@ def main():
                         help='input intensity images')
     parser.add_argument('-m', '--model', default=default_model,
                         help='model root folder')
+    parser.add_argument('-s', '--structure', defalut='0',
+                        help='structure for detection, 0 for bones, 1 for face.')
     parser.add_argument('-g', '--gpu_id', type=int, default=default_gpu_id,
                         help='the gpu id to run model, set to -1 if using cpu only.')
     parser.add_argument('-o', '--output', default=default_output,
                         help='output folder for segmentation')
 
     args = parser.parse_args()
-    dental_detection_batch(args.input, args.model, args.gpu_id, args.output)
+    dental_detection_batch(args.input, args.model, args.structure, args.gpu_id, args.output)
 
 
 if __name__ == '__main__':
