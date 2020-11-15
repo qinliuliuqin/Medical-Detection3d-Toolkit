@@ -19,7 +19,7 @@ def dental_detection_batch(input_path, model_folder, gpu_id, output_folder):
     # load test images
     if os.path.isfile(input_path):
         if input_path.endswith('.csv'):
-            file_name_list, file_path_list = read_image_list(input_path, 'test')
+            file_name_list, file_path_list, _, _ = read_image_list(input_path, 'test')
         else:
             if input_path.endswith('.mhd') or input_path.endswith('.mha') or \
                     input_path.endswith('.nii.gz') or input_path.endswith('.nii') or \
