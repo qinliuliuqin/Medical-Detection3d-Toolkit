@@ -29,11 +29,11 @@ def train(config_file):
     if os.path.isdir(cfg.general.save_dir) and cfg.general.resume_epoch < 0:
         shutil.rmtree(cfg.general.save_dir)
 
-    # create save folder if it does not exist
+    # create a folder for saving training files if it does not exist
     if not os.path.isdir(cfg.general.save_dir):
         os.makedirs(cfg.general.save_dir)
 
-    # Update training config file
+    # update the training config file
     shutil.copy(config_file, os.path.join(cfg.general.save_dir, os.path.basename(config_file)))
 
     # enable logging
@@ -86,7 +86,7 @@ def train(config_file):
     for i in range(len(train_data_loader)):
         begin_t = time.time()
 
-        crops, landmark_masks, landmark_coords, frames, filenames = data_iter.next()
+        crops, landmark_masks, landmark_coords, frames, filenames = next(data_iter)
 
         if cfg.general.num_gpus > 0:
             crops, landmark_masks, landmark_coords = \
