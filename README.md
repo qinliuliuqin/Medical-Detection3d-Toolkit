@@ -21,7 +21,7 @@ For a given test image and the trained segmentation model, we first obtain the p
 ```
 $ git clone https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit.git
 ```
-2. Prepare the landmark annotation file for each image in CSV format. An example landmark file can be found [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/case_17_cbct_patient.csv).
+2. Prepare the landmark annotation file for each image in CSV format. An example landmark file can be found [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/case_17_cbct_patient.csv). Note that we use world coordinates, not image coordinates, for each landmark.
 3. Generate the landmark mask using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/scripts/gen_landmark_mask.py). It requires the above landmark annotation file as input.
 An example landmark mask can be found [here](https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/test_data/landmark_mask.mha). 
 
