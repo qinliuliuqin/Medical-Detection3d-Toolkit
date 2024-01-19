@@ -21,7 +21,8 @@ For a given test image and the trained segmentation model, we first obtain the p
 ```
 $ git clone https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit.git
 ```
-2. Generate the landmark mask using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/scripts/gen_landmark_mask.py).
+2. Prepare the landmark annotation file for each image in CSV format. An example landmark file can be found [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/case_17_cbct_patient.csv).
+3. Generate the landmark mask using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/scripts/gen_landmark_mask.py).
 An example landmark mask can be found [here](https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/test_data/landmark_mask.mha). 
 
 In the landmark mask, there are three types of voxels:
@@ -31,9 +32,9 @@ In the landmark mask, there are three types of voxels:
 |0| background voxels
 |-1| invalid voxles  
 
-3. Generate the training file, an example file can be found [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/train.csv).
+4. Generate the training file, an example file can be found [here](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/demo/train.csv).
 
-4. Train the model using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/lmk_det_train.py), an example configuration file can be found [Here](https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/model_0531_2020/batch_1/checkpoints/chk_1200/lmk_train_config.py).
+5. Train the model using this [code](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/lmk_det_train.py), an example configuration file can be found [Here](https://github.com/qinliuliuqin/Model-Zoo/blob/master/Dental/detection/landmark/model_0531_2020/batch_1/checkpoints/chk_1200/lmk_train_config.py).
 
 # Inference
 [lmk_det_infer.py](https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit/blob/master/detection3d/lmk_det_infer.py)
