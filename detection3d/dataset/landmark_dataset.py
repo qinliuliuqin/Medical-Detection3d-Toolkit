@@ -7,7 +7,8 @@ from torch.utils.data import Dataset
 
 from detection3d.utils.image_tools import select_random_voxels_in_multi_class_mask, \
   crop_image, convert_image_to_tensor, get_image_frame
-from detection3d.utils.landmark_utils import is_world_coordinate_valid, is_voxel_coordinate_valid
+from detection3d.utils.landmark_utils import is_world_coordinate_valid, \
+  is_voxel_coordinate_valid
 
 
 def read_landmark_coords(image_name_list, landmark_file_path, target_landmark_label):
@@ -172,7 +173,7 @@ class LandmarkDetectionDataset(Dataset):
   def select_samples_in_the_landmark_mask(self, landmark_mask, landmark_df):
     """
     Select samples from the landmark mask.
-    :param landmark_mask: The landmark mask that voxels of different landmarks have different label.
+    :param landmark_mask: The landmark mask in which voxels of different landmarks have different labels.
     :param landmark_df: The dictionary of the landmark coordinates.
     :return: the landmark mask that has a balanced positive and negative sample voxels.
     """

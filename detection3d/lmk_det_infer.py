@@ -9,23 +9,17 @@ def main():
                        '1. Single image\n' \
                        '2. A text file containing paths of all testing images\n' \
                        '3. A folder containing all testing images\n'
-
-    default_input = '/shenlab/lab_stor6/projects/CT_Dental/dataset/landmark_detection/test_1_server.csv'
-    default_model = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0502_2020/batch_1'
-    default_output = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/results/model_0502_2020/batch_1/test_set/'
-    default_save_prob = False
-    default_gpu_id = 5
-
+    
     parser = argparse.ArgumentParser(description=long_description)
-    parser.add_argument('-i', '--input', default=default_input,
+    parser.add_argument('-i', '--input', default='../assets/case_001.nii.gz',
                         help='input folder/file for intensity images')
-    parser.add_argument('-m', '--model', default=default_model,
+    parser.add_argument('-m', '--model', default='./saves/weights',
                         help='model root folder')
-    parser.add_argument('-o', '--output', default=default_output,
+    parser.add_argument('-o', '--output', default='./saves/results',
                         help='output folder for segmentation')
-    parser.add_argument('-g', '--gpu_id', type=int, default=default_gpu_id,
+    parser.add_argument('-g', '--gpu_id', type=int, default=0,
                         help='the gpu id to run model, set to -1 if using cpu only.')
-    parser.add_argument('-s', '--save_prob', type=bool, default=default_save_prob,
+    parser.add_argument('-s', '--save_prob', type=bool, default=False,
                         help='Whether save the probability maps.')
 
     args = parser.parse_args()

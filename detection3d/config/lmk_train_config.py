@@ -9,38 +9,23 @@ cfg = __C
 ##################################
 __C.general = {}
 
-__C.general.training_image_list_file = '/shenlab/lab_stor6/projects/CT_Dental/dataset/landmark_detection/train_server.csv'
+__C.general.training_image_list_file = '../assets/train.csv'
 
 __C.general.validation_image_list_file = ''
 
 # landmark label starts from 1, 0 represents the background.
 __C.general.target_landmark_label = {
-    'S': 1,
-    'Gb': 2,
-    'Rh': 4,
-    'Fz-R': 5,
-    'Fz-L': 6,
-    'Ft-R': 7,
-    'Ft-L': 8,
-    'SOF-R': 15,
-    'SOF-L': 16,
-    'Ba': 21,
-    'FMP': 22,
-    'GFC-R': 23,
-    'GFC-L': 24,
-    'M-R': 27,
-    'M-L': 28,
-    'Po-R': 29,
-    'Po-L': 32,
-    'ANS': 35,
-    'PNS': 41,
-    'B': 80,
-    'Me': 83,
-    'Go-R': 95,
-    'Go-L': 101
+    'A': 1,
+    'B': 2,
+    'C': 3,
+    'D': 4,
+    'E': 5,
+    'F': 6,
+    'G': 7,
+    'H': 8,
 }
 
-__C.general.save_dir = '/shenlab/lab_stor6/qinliu/projects/CT_Dental/models/model_0529_2020_debug'
+__C.general.save_dir = './saves/weights'
 
 __C.general.resume_epoch = -1
 
@@ -100,7 +85,7 @@ __C.landmark_loss = {}
 
 __C.landmark_loss.name = 'Focal'          # 'Dice', or 'Focal'
 
-__C.landmark_loss.focal_obj_alpha = [0.75] * 24  # class balancing weight for focal loss
+__C.landmark_loss.focal_obj_alpha = [0.75] * 9  # class balancing weight for focal loss
 
 __C.landmark_loss.focal_gamma = 2         # gamma in pow(1-p,gamma) for focal loss
 
@@ -126,7 +111,7 @@ __C.train.lr = 1e-4
 
 __C.train.betas = (0.9, 0.999)
 
-__C.train.save_epochs = 100
+__C.train.save_epochs = 1000
 
 ##################################
 # debug parameters
