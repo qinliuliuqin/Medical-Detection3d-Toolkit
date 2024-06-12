@@ -19,7 +19,7 @@ pip3 install -r requirements.txt
 ```
 
 ## Data
-First, the users need to prepare medical images and their corresponding landmark annotations. The ``assets`` folder contains an example image (``case_001.nii.gz``) and landmark annotation file (``case_001.csv``). Then, generate landmark masks (e.g, ``case_001_landmark_mask.nii.gz``) given the pairs as demonstrated in this [notebook](./detection3d/scripts/gen_lamdmark_mask.ipynb). The meaning of labels in the landmark mask:
+First, the users need to prepare medical images and their corresponding landmark annotations. The ``assets`` folder contains an example image (``case_001.nii.gz``) and landmark annotation file (``case_001.csv``). Note that this example data is not the private data we used in SkullEngine. Then, generate landmark masks (e.g, ``case_001_landmark_mask.nii.gz``) given the pairs as demonstrated in this [notebook](./detection3d/scripts/gen_lamdmark_mask.ipynb). The meaning of labels in the landmark mask:
 |Label| Meaning|
 |----|----|
 |``positive integer``| these are ``positive`` samples of landmarks (e.g., voxels with value ``1`` represent the first landmark.)|
