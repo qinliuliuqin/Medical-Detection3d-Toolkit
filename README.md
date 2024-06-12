@@ -28,6 +28,13 @@ First, the users need to prepare medical images and their corresponding landmark
 
 Finally, prepare dataset splitting files for training (``train.csv``) and testing (``test.csv``).
 
+## Visualization
+To check if the landmark masks are correctly generated, we recommend using [ITK-SNAP](http://www.itksnap.org/pmwiki/pmwiki.php) to visualize image overlayed with the corresponding landmark mask, as shown below.
+
+<p align="center">
+  <img src="./assets/itksnap.png" alt="drawing", width="700"/>
+</p>
+
 ## Training
 Run the following code for training with a single GPU.
 The user may need to modify training settings in ``./config/lmk_train_config.py``. By default, the model will be saved in ``./saves/weights``.
