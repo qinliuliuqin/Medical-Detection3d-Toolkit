@@ -1,23 +1,23 @@
 import numpy as np
 import SimpleITK as sitk
 
-from segmentation3d.utils.dicom_helper import read_dicom_series, write_dicom_series, write_binary_dicom_series, \
+from detection3d.utils.dicom_helper import read_dicom_series, write_dicom_series, write_binary_dicom_series, \
   dicom_tags_dict
 
 
 def test_save_dicom_series():
   # read mha image
-  seg_path = '/mnt/projects/CT_Dental/Pre_Post_Facial_Data-Ma/original_images/n03_orginImg_post.nii.gz'
+  seg_path = './test_image.nii.gz'
   seg = sitk.ReadImage(seg_path, sitk.sitkInt16)
 
   # save mha to dicom series
   tags = dicom_tags_dict()
-  dicom_save_folder = '/mnt/projects/CT_Dental/Pre_Post_Facial_Data-Ma/original_images_dicom_test/n03_orginImg_post'
+  dicom_save_folder = './test_image_dicom'
   write_dicom_series(seg, dicom_save_folder, tags=tags)
 
   # load the saved dicom series
   seg_reload = read_dicom_series(dicom_save_folder)
-  seg_reload_path = '/mnt/projects/CT_Dental/Pre_Post_Facial_Data-Ma/original_images_dicom_test/n03_orginImg_post.nii.gz'
+  seg_reload_path = './test_image_dicom'
   sitk.WriteImage(seg_reload, seg_reload_path)
 
   # compare the original image and the reloaded image
@@ -27,16 +27,16 @@ def test_save_dicom_series():
 
 
 def test_save_binary_dicom_series():
-  # read mha image
-  seg_path = '/home/qinliu/debug/seg.mha'
+  # read image
+  seg_path = './test_mask.nii.gz'
   seg = sitk.ReadImage(seg_path, sitk.sitkInt16)
 
-  # save mha to binary dicom series
+  # save to binary dicom series
   tags = dicom_tags_dict()
-  dicom_save_folder = '/home/qinliu/debug/seg_dicom_maxilla'
+  dicom_save_folder = './test_mask/test_mask_label1'
   write_binary_dicom_series(seg, dicom_save_folder, in_label=1, out_label=100, tags=tags)
 
-  dicom_save_folder = '/home/qinliu/debug/seg_dicom_mandible'
+  dicom_save_folder = './test_mask/test_mask_label2'
   write_binary_dicom_series(seg, dicom_save_folder, in_label=2, out_label=100, tags=tags)
 
 
@@ -49,11 +49,11 @@ def test_merge_mask():
   merged_mask: the mask merged by mask1 and mask2.
   """
   # read the first mask
-  mask_path_1 = '/home/qinliu/debug/seg1_dicom'
+  mask_path_1 = './seg1_dicom'
   mask1 = read_dicom_series(mask_path_1)
 
   # read the second mask
-  mask_path_2 = '/home/qinliu/debug/seg2_dicom'
+  mask_path_2 = './seg2_dicom'
   mask2 = read_dicom_series(mask_path_2)
 
   # the two masks should have the same size
@@ -72,7 +72,7 @@ def test_merge_mask():
 
   merged_mask = sitk.GetImageFromArray(mask1_npy)
   merged_mask.CopyInformation(mask1)
-  merged_mask_path = '/home/qinliu/debug/merged_seg.mha'
+  merged_mask_path = './merged_seg.mha'
   sitk.WriteImage(merged_mask, merged_mask_path, True)
 
 
@@ -80,6 +80,6 @@ if __name__ == '__main__':
 
   test_save_dicom_series()
 
-  # test_save_binary_dicom_series()
-  #
-  # test_merge_mask()
+  test_save_binary_dicom_series()
+  
+  test_merge_mask()
