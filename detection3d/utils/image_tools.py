@@ -9,7 +9,6 @@ type_conversion_from_numpy_to_sitk = {
     np.int8:     sitk.sitkInt8,
     np.int16:    sitk.sitkInt16,
     np.int32:    sitk.sitkInt32,
-    np.int:      sitk.sitkInt32,
     np.int64:    sitk.sitkInt64,
     np.uint8:    sitk.sitkUInt8,
     np.uint16:   sitk.sitkUInt16,
@@ -18,7 +17,6 @@ type_conversion_from_numpy_to_sitk = {
     np.uint:     sitk.sitkUInt32,
     np.float32:  sitk.sitkFloat32,
     np.float64:  sitk.sitkFloat64,
-    np.float:    sitk.sitkFloat32
 }
 
 
