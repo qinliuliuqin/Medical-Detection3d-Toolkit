@@ -20,7 +20,7 @@ type_conversion_from_numpy_to_sitk = {
 }
 
 
-def crop_image(image, cropping_center, cropping_size, cropping_spacing, interp_method):
+def crop_image(image, cropping_center_mm, cropping_size, cropping_spacing, interp_method):
     """
     Crop a patch from a volume given the cropping center, cropping size, cropping spacing, and the interpolation method.
     This function DO NOT consider the transformation of coordinate systems, which means the cropped patch has the same
@@ -35,12 +35,12 @@ def crop_image(image, cropping_center, cropping_size, cropping_spacing, interp_m
     """
     assert isinstance(image, sitk.Image)
 
-    cropping_center = [float(cropping_center[idx]) for idx in range(3)]
+    cropping_center_mm = [float(cropping_center_mm[idx]) for idx in range(3)]
     cropping_size = [int(cropping_size[idx]) for idx in range(3)]
     cropping_spacing = [float(cropping_spacing[idx]) for idx in range(3)]
 
     cropping_physical_size = [cropping_size[idx] * cropping_spacing[idx] for idx in range(3)]
-    cropping_start_point_world = [cropping_center[idx] - cropping_physical_size[idx] / 2.0 for idx in range(3)]
+    cropping_start_point_world = [cropping_center_mm[idx] - cropping_physical_size[idx] / 2.0 for idx in range(3)]
     for idx in range(3):
         cropping_start_point_world[idx] += cropping_spacing[idx] / 2.0
 
@@ -56,7 +56,7 @@ def crop_image(image, cropping_center, cropping_size, cropping_spacing, interp_m
 
     transform = sitk.Transform(3, sitk.sitkIdentity)
     outimage = sitk.Resample(image, cropping_size, transform, interp_method, cropping_origin, cropping_spacing,
-                             cropping_direction)
+                            cropping_direction)
 
     return outimage
 
@@ -168,8 +168,8 @@ def set_image_frame(image, frame):
 
     :param image: the a new frame to the input image.
     :param frame: the new frame of the image. It is a numpy array with 15 elements, with the first three elements
-                  representing the spacing, the next three elements representing the origin, and the rest representing
-                  the direction.
+                    representing the spacing, the next three elements representing the origin, and the rest representing
+                    the direction.
     """
     assert isinstance(image, sitk.Image)
 
@@ -244,7 +244,7 @@ def copy_image(source_image, target_start_voxel, target_end_voxel, target_image)
 
 
 def image_partition_by_fixed_size(image, bbox_start_voxel, bbox_end_voxel,
-                                  partition_size, partition_stride, max_stride):
+                                    partition_size, partition_stride, max_stride):
     """
     Split image by fixed size.
 
@@ -457,7 +457,7 @@ def resample_spacing(image, resampled_spacing, max_stride, interp_method):
 
     identity_transform = sitk.Transform(3, sitk.sitkIdentity)
     return sitk.Resample(image, out_size, identity_transform, interp_method, in_origin, resampled_spacing,
-                         in_direction)
+                            in_direction)
 
 
 def pick_largest_connected_component(mask, labels):
@@ -473,12 +473,12 @@ def pick_largest_connected_component(mask, labels):
 
     largest_cc_binaries = []
     for label in labels:
-      mask_binary = (mask == label)
-      mask_binary_cc = filter.Execute(mask_binary)
+        mask_binary = (mask == label)
+        mask_binary_cc = filter.Execute(mask_binary)
 
-      mask_binary_cc = sitk.RelabelComponent(mask_binary_cc)
-      mask_binary_largest_cc = (mask_binary_cc == 1)
-      largest_cc_binaries.append(mask_binary_largest_cc)
+        mask_binary_cc = sitk.RelabelComponent(mask_binary_cc)
+        mask_binary_largest_cc = (mask_binary_cc == 1)
+        largest_cc_binaries.append(mask_binary_largest_cc)
 
     largest_cc_multi = largest_cc_binaries[0]
     for idx in range(1, len(labels)):
@@ -501,12 +501,12 @@ def remove_small_connected_component(mask, labels, threshold):
 
     largest_cc_binaries = []
     for label in labels:
-      mask_binary = (mask == label)
-      mask_binary_cc = filter.Execute(mask_binary)
+        mask_binary = (mask == label)
+        mask_binary_cc = filter.Execute(mask_binary)
 
-      mask_binary_cc = sitk.RelabelComponent(mask_binary_cc, threshold)
-      mask_binary_largest_cc = (mask_binary_cc > 0)
-      largest_cc_binaries.append(mask_binary_largest_cc)
+        mask_binary_cc = sitk.RelabelComponent(mask_binary_cc, threshold)
+        mask_binary_largest_cc = (mask_binary_cc > 0)
+        largest_cc_binaries.append(mask_binary_largest_cc)
 
     largest_cc_multi = largest_cc_binaries[0]
     for idx in range(1, len(labels)):

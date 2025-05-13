@@ -46,7 +46,7 @@ __C.dataset.positive_upper_bound = 3    # voxel
 
 __C.dataset.negative_lower_bound = 6    # voxel
 
-__C.dataset.num_pos_patches_per_image = 8
+__C.dataset.num_pos_patches_per_image = 8 # This should be same as number of landmarks 
 
 __C.dataset.num_neg_patches_per_image = 16
 
