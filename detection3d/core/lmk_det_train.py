@@ -71,9 +71,9 @@ def train(config_file):
     if cfg.landmark_loss.name == 'Focal':
         # reuse focal loss if exists
         loss_func = FocalLoss(
-          class_num=num_landmark_classes, alpha=cfg.landmark_loss.focal_obj_alpha,
-          gamma=cfg.landmark_loss.focal_gamma,use_gpu=cfg.general.num_gpus > 0
-        )
+            class_num=num_landmark_classes, alpha=cfg.landmark_loss.focal_obj_alpha,
+            gamma=cfg.landmark_loss.focal_gamma,use_gpu=cfg.general.num_gpus > 0)
+        
     else:
         raise ValueError('Unknown loss function')
 
@@ -83,14 +83,15 @@ def train(config_file):
     data_iter = iter(train_data_loader)
 
     # loop over batches
-    for i in range(len(train_data_loader)):
+    # for i in range(len(train_data_loader)):
+    for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader):
         begin_t = time.time()
 
-        crops, landmark_masks, landmark_coords, frames, filenames = next(data_iter)
+        # crops, landmark_masks, landmark_coords, frames, filenames = next(data_iter)
 
         if cfg.general.num_gpus > 0:
             crops, landmark_masks, landmark_coords = \
-              crops.cuda(), landmark_masks.cuda(), landmark_coords.cuda()
+                crops.cuda(), landmark_masks.cuda(), landmark_coords.cuda()
 
         # clear previous gradients
         opt.zero_grad()
@@ -102,7 +103,7 @@ def train(config_file):
         if cfg.debug.save_inputs:
             batch_size = crops.size(0)
             save_intermediate_results(list(range(batch_size)), crops, landmark_masks, outputs, frames, filenames,
-                                      os.path.join(cfg.general.save_dir, 'batch_{}'.format(i)))
+                                        os.path.join(cfg.general.save_dir, 'batch_{}'.format(i)))
 
         # select valid samples for landmark mask segmentation
         assert outputs.shape[0] == landmark_masks.shape[0]
