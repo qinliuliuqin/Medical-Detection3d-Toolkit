@@ -77,3 +77,25 @@ class EpochConcateDistributedSampler(DistributedSampler):
 
     def __len__(self):
         return super(EpochConcateDistributedSampler, self).__len__() * self.epoch
+    
+class RandomSubsetSampler(Sampler):
+    """
+    Randomly samples a subset of data for validation.
+    Arguments:
+        data_source (Dataset): The dataset to sample from.
+        num_samples (int): Number of samples to draw in each iteration.
+        seed (int, optional): Seed for reproducibility.
+    """
+    def __init__(self, data_source, num_samples, seed=None):
+        self.data_length = len(data_source)
+        self.num_samples = min(num_samples, self.data_length)
+        self.seed = seed
+
+    def __iter__(self):
+        if self.seed is not None:
+            random.seed(self.seed)  # Set seed for reproducibility
+        indices = random.sample(range(self.data_length), self.num_samples)
+        return iter(indices)
+
+    def __len__(self):
+        return self.num_samples

@@ -54,7 +54,7 @@ def read_image_list(image_list_file, mode):
   if mode == 'test':
     return image_name_list, image_path_list, None, None
 
-  elif mode == 'train' or mode == 'validation':
+  elif mode == 'train' or mode == 'val':
     landmark_file_path_list = images_df['landmark_file_path'].tolist()
     landmark_mask_path_list = images_df['landmark_mask_path'].tolist()
     return image_name_list, image_path_list, landmark_file_path_list, \
@@ -86,8 +86,8 @@ class LandmarkDetectionDataset(Dataset):
                 augmentation_translation,
                 interpolation,
                 crop_normalizers):
-    self.mode = mode
-    assert self.mode == 'train' or self.mode == 'Train'
+    self.mode = mode.lower()
+    assert self.mode in ['train', 'val']
 
     self.image_name_list, self.image_path_list, self.landmark_file_path, self.landmark_mask_path = \
       read_image_list(image_list_file, self.mode)
