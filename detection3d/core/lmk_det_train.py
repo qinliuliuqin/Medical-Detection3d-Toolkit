@@ -95,7 +95,7 @@ def train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenam
     return train_loss
 
 
-def val_step(cfg, network, val_data_loader, num_val_cases, loss_function):
+def val_step(cfg, network, val_data_loader, loss_function):
     """
     Perform a validation step over the entire validation dataset.
 
@@ -103,7 +103,6 @@ def val_step(cfg, network, val_data_loader, num_val_cases, loss_function):
         cfg: Configuration object containing relevant settings.
         network: The model/network to validate.
         val_data_loader: DataLoader for validation data.
-        num_val_cases: Total number of validation cases.
         loss_function: Loss function to compute validation loss.
 
     Returns:
@@ -111,9 +110,13 @@ def val_step(cfg, network, val_data_loader, num_val_cases, loss_function):
     """
     network.eval()  # Set the network to evaluation mode
     val_loss_epoch = 0
+    total_samples = 0
 
     with torch.no_grad():
         for batch_idx, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(val_data_loader):
+
+            batch_size = crops.size(0)
+
             # Transfer data to GPU if available
             if cfg.general.num_gpus > 0:
                 crops = crops.cuda()
@@ -133,8 +136,10 @@ def val_step(cfg, network, val_data_loader, num_val_cases, loss_function):
 
             # Accumulate validation loss
             val_loss_epoch += compute_landmark_mask_loss(outputs, landmark_masks, loss_function)
+            total_samples += batch_size
 
-    return (val_loss_epoch / num_val_cases).item()
+    avg_val_loss_per_sample = val_loss_epoch / total_samples
+    return avg_val_loss_per_sample
 
 
 def train(config_file):
@@ -178,7 +183,7 @@ def train(config_file):
     net = net_module.Net(num_modality, num_landmark_classes)
     max_stride = net.max_stride()
     net_module.parameters_kaiming_init(net)
-    
+
     if cfg.general.num_gpus > 0:
         net = nn.parallel.DataParallel(net, device_ids=list(range(cfg.general.num_gpus)))
         net = net.cuda()
@@ -205,34 +210,91 @@ def train(config_file):
 
     writer = SummaryWriter(os.path.join(cfg.general.save_dir, 'tensorboard'))
 
-    batch_idx = batch_start
 
-    # loop over batches
+    batch_idx = batch_start
+    train_loss_epoch = 0
+    train_batch_size = 0
+    prev_epoch_idx = 0
+    last_save_epoch = -1
+
     for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader):
         begin_t = time.time()
-        
+        batch_size = crops.size(0)
+        train_batch_size += batch_size
+
         train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, batch_idx)
+        train_loss_epoch += train_loss.item()
 
         epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
-        batch_idx += 1
         batch_duration = time.time() - begin_t
-        sample_duration = batch_duration * 1.0 / cfg.train.batch_size
+        sample_duration = batch_duration / batch_size
 
-        if epoch_idx % cfg.val.interval == 0:
-            val_loss_epoch = val_step(cfg, net, val_data_loader, num_val_cases, loss_func)
+        # Validation and Logging
+        if epoch_idx > prev_epoch_idx:
+            avg_train_loss_per_sample = train_loss_epoch / train_batch_size
+            val_loss_epoch = val_step(cfg, net, val_data_loader, loss_func)
 
-        # print training loss per batch
-        msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss_epoch: {:.4f}, time: {:.4f} s/vol'
-        msg = msg.format(epoch_idx, batch_idx, train_loss.item(), val_loss_epoch, sample_duration)
-        logger.info(msg)
+            msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss: {:.4f}, time: {:.4f} s/vol'
+            logger.info(msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample, val_loss_epoch, sample_duration))
 
-        # save checkpoint
-        if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0):
-            if last_save_epoch != epoch_idx:
+            writer.add_scalar('Val/Loss', val_loss_epoch, batch_idx)
+
+            # Reset per-epoch stats
+            train_loss_epoch = 0
+            train_batch_size = 0
+            prev_epoch_idx = epoch_idx
+
+            # Save checkpoint
+            if epoch_idx % cfg.train.save_epochs == 0 and last_save_epoch != epoch_idx:
                 save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
                 last_save_epoch = epoch_idx
 
-
         writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)
+        batch_idx += 1
 
     writer.close()
+
+
+
+    # batch_idx = batch_start
+    # train_loss_epoch = 0
+    # prev_epoch_idx = 0
+    # train_batch_size = 0
+    # # loop over batches
+    # for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader):
+    #     begin_t = time.time()
+    #     train_batch_size += crops.size(0)
+
+    #     train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, batch_idx)
+    #     train_loss_epoch += train_loss
+
+    #     epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
+    #     if epoch_idx > prev_epoch_idx:
+    #         prev_epoch_idx = epoch_idx
+    #         avg_train_loss_per_sample = train_loss_epoch / train_batch_size
+    #         train_batch_size = 0
+            
+    #     batch_idx += 1
+    #     batch_duration = time.time() - begin_t
+    #     sample_duration = batch_duration * 1.0 / cfg.train.batch_size
+
+    #     if epoch_idx % cfg.val.interval == 0:
+    #         val_loss_epoch = val_step(cfg, net, val_data_loader, loss_func)
+
+
+    #     # print training loss per batch
+    #     if epoch_idx > prev_epoch_idx:
+    #         msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss_epoch: {:.4f}, time: {:.4f} s/vol'
+    #         msg = msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample.item(), val_loss_epoch, sample_duration)
+    #         logger.info(msg)
+
+    #     # save checkpoint
+    #     if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0):
+    #         if last_save_epoch != epoch_idx:
+    #             save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
+    #             last_save_epoch = epoch_idx
+
+
+    #     writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)
+
+    # writer.close()

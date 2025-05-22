@@ -124,7 +124,7 @@ __C.val.batch_size = 4
 
 __C.val.num_threads = 4
 
-__C.val.eval_fraction = 0.25
+__C.val.eval_fraction = 1
 
 ##################################
 # debug parameters

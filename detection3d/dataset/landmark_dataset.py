@@ -138,24 +138,6 @@ class LandmarkDetectionDataset(Dataset):
   def num_organ_classes(self):
     return self.num_organ_classes
 
-  # def global_sample(self, image):
-  #   """ random sample a position in the image
-  #   :param image: a SimpleITK image object which should be in the RAI coordinate
-  #   :return: a world position in the RAI coordinate
-  #   """
-  #   assert isinstance(image, sitk.Image)
-
-  #   origin = image.GetOrigin()
-  #   im_size_mm = [image.GetSize()[idx] * image.GetSpacing()[idx] for idx in range(3)]
-  #   crop_size_mm = self.crop_size * self.crop_spacing
-
-  #   sp = np.array(origin, dtype=np.double)
-  #   for i in range(3):
-  #     if im_size_mm[i] > crop_size_mm[i]:
-  #       sp[i] = origin[i] + np.random.uniform(0, im_size_mm[i] - crop_size_mm[i])
-  #   center = sp + crop_size_mm / 2
-  #   return center
-
   def global_sample(self, image):
       """ random sample a position in the image
       :param image: a SimpleITK image object which should be in the RAI coordinate
