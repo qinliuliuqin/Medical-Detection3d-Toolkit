@@ -101,6 +101,8 @@ __C.net.name = 'vdnet'
 ##################################
 __C.train = {}
 
+__C.train.use_amp = True
+
 __C.train.epochs = 2001
 
 __C.train.batch_size = 4

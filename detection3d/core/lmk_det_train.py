@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from tensorboardX import SummaryWriter
-
+from torch.amp import autocast, GradScaler
 from detection3d.utils.image_tools import save_intermediate_results
 from detection3d.loss.focal_loss import FocalLoss
 from detection3d.utils.file_io import load_config, setup_logger
@@ -49,25 +49,7 @@ def compute_landmark_mask_loss(outputs, landmark_masks, loss_function):
     return loss
 
 
-def train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, optimizer, batch_idx):
-    """
-    Executes a single training step: forward pass, loss computation, backward pass, and optimizer step.
-
-    Args:
-        cfg: Configuration object containing general/debug settings.
-        net: The model to train.
-        crops: Input volume tensor [B, C, D, H, W].
-        landmark_masks: Ground truth landmark masks.
-        landmark_coords: Ground truth landmark coordinates (optional).
-        frames: Frame identifiers for visualization.
-        filenames: Input file names for visualization.
-        loss_func: The loss function to use.
-        optimizer: The optimizer instance.
-        batch_idx: Index of the current batch (for logging/visualization).
-
-    Returns:
-        train_loss: Training loss value.
-    """
+def train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, optimizer, scaler, batch_idx):
     net.train()
 
     if cfg.general.num_gpus > 0:
@@ -75,22 +57,30 @@ def train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenam
         landmark_masks = landmark_masks.cuda()
         landmark_coords = landmark_coords.cuda()
 
-    # Clear previous gradients
     optimizer.zero_grad()
 
-    # Forward pass
-    outputs = net(crops)
+    with autocast(device_type='cuda', enabled=cfg.train.use_amp):
+        outputs = net(crops)
+        train_loss = compute_landmark_mask_loss(outputs, landmark_masks, loss_func)
 
-    # Optional: Save debug inputs and outputs
+    # ---------- AMP path ----------
+    if cfg.train.use_amp:
+        scaler.scale(train_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+    # ---------- Standard FP32 path ----------
+    else:
+        train_loss.backward()
+        optimizer.step()
+
+    # Optional: Save debug outputs
     if cfg.debug.save_inputs:
         batch_size = crops.size(0)
         save_path = os.path.join(cfg.general.save_dir, f'batch_{batch_idx}')
-        save_intermediate_results(list(range(batch_size)), crops, landmark_masks, outputs, frames, filenames, save_path)
-
-    # Compute loss and backpropagate
-    train_loss = compute_landmark_mask_loss(outputs, landmark_masks, loss_func)
-    train_loss.backward()
-    optimizer.step()
+        save_intermediate_results(
+            list(range(batch_size)), crops, landmark_masks, outputs, frames, filenames, save_path
+        )
 
     return train_loss
 
@@ -106,37 +96,36 @@ def val_step(cfg, network, val_data_loader, loss_function):
         loss_function: Loss function to compute validation loss.
 
     Returns:
-        val_loss_epoch: Total validation loss over the entire dataset.
+        avg_val_loss_per_sample: Average validation loss per sample.
     """
-    network.eval()  # Set the network to evaluation mode
-    val_loss_epoch = 0
+    network.eval()
+    val_loss_epoch = 0.0
     total_samples = 0
 
     with torch.no_grad():
         for batch_idx, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(val_data_loader):
-
             batch_size = crops.size(0)
 
-            # Transfer data to GPU if available
+            # Move to GPU if needed
             if cfg.general.num_gpus > 0:
                 crops = crops.cuda()
                 landmark_masks = landmark_masks.cuda()
                 landmark_coords = landmark_coords.cuda()
 
-            # Run inference
-            outputs = network(crops)
+            # Enable AMP if specified
+            with autocast(device_type='cuda', enabled=cfg.train.use_amp):
+                outputs = network(crops)
+                val_loss = compute_landmark_mask_loss(outputs, landmark_masks, loss_function)
 
-            # Save inputs and outputs for debugging/visualization
+            val_loss_epoch += val_loss.item()
+            total_samples += batch_size
+
+            # Save for debugging/visualization
             if cfg.debug.save_inputs:
-                batch_size = crops.size(0)
                 save_path = os.path.join(cfg.general.save_dir, f'val_batch_{batch_idx}')
                 save_intermediate_results(
                     list(range(batch_size)), crops, landmark_masks, outputs, frames, filenames, save_path
                 )
-
-            # Accumulate validation loss
-            val_loss_epoch += compute_landmark_mask_loss(outputs, landmark_masks, loss_function)
-            total_samples += batch_size
 
     avg_val_loss_per_sample = val_loss_epoch / total_samples
     return avg_val_loss_per_sample
@@ -151,6 +140,9 @@ def train(config_file):
 
     # load config file
     cfg = load_config(config_file)
+
+    scaler = GradScaler() if cfg.train.use_amp else None
+
 
     # clean the existing folder if training from scratch
     if os.path.isdir(cfg.general.save_dir) and cfg.general.resume_epoch < 0:
@@ -217,12 +209,12 @@ def train(config_file):
     prev_epoch_idx = 0
     last_save_epoch = -1
 
-    for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader):
+    for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader, start=batch_start):
         begin_t = time.time()
         batch_size = crops.size(0)
         train_batch_size += batch_size
 
-        train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, batch_idx)
+        train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, scaler, batch_idx)
         train_loss_epoch += train_loss.item()
 
         epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
@@ -253,48 +245,3 @@ def train(config_file):
         batch_idx += 1
 
     writer.close()
-
-
-
-    # batch_idx = batch_start
-    # train_loss_epoch = 0
-    # prev_epoch_idx = 0
-    # train_batch_size = 0
-    # # loop over batches
-    # for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader):
-    #     begin_t = time.time()
-    #     train_batch_size += crops.size(0)
-
-    #     train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, batch_idx)
-    #     train_loss_epoch += train_loss
-
-    #     epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
-    #     if epoch_idx > prev_epoch_idx:
-    #         prev_epoch_idx = epoch_idx
-    #         avg_train_loss_per_sample = train_loss_epoch / train_batch_size
-    #         train_batch_size = 0
-            
-    #     batch_idx += 1
-    #     batch_duration = time.time() - begin_t
-    #     sample_duration = batch_duration * 1.0 / cfg.train.batch_size
-
-    #     if epoch_idx % cfg.val.interval == 0:
-    #         val_loss_epoch = val_step(cfg, net, val_data_loader, loss_func)
-
-
-    #     # print training loss per batch
-    #     if epoch_idx > prev_epoch_idx:
-    #         msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss_epoch: {:.4f}, time: {:.4f} s/vol'
-    #         msg = msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample.item(), val_loss_epoch, sample_duration)
-    #         logger.info(msg)
-
-    #     # save checkpoint
-    #     if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0):
-    #         if last_save_epoch != epoch_idx:
-    #             save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
-    #             last_save_epoch = epoch_idx
-
-
-    #     writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)
-
-    # writer.close()
