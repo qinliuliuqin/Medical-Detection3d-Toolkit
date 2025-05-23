@@ -131,6 +131,38 @@ def val_step(cfg, network, val_data_loader, loss_function):
     return avg_val_loss_per_sample
 
 
+def log_training_setup(cfg, logger):
+    logger.info("========== Training Configuration ==========")
+
+    # --- Training parameters ---
+    logger.info(">>> Training Parameters")
+    logger.info(f"AMP enabled           : {cfg.train.use_amp}")
+    logger.info(f"Resume from epoch     : {cfg.general.resume_epoch}")
+    logger.info(f"Batch size            : {cfg.train.batch_size}")
+    logger.info(f"Learning rate         : {cfg.train.lr}")
+    logger.info(f"Crop size             : {cfg.dataset.crop_size}")
+    logger.info(f"Loss function         : {cfg.landmark_loss.name}")
+
+    # --- Validation parameters ---
+    logger.info(">>> Validation Parameters")
+    logger.info(f"Validation interval   : {cfg.val.interval} epochs")
+    logger.info(f"Validation batch size : {cfg.val.batch_size}")
+    logger.info(f"Validation threads    : {cfg.val.num_threads}")
+    logger.info(f"Eval fraction         : {cfg.val.eval_fraction}")
+
+    # --- Hardware & Save info ---
+    logger.info(">>> Hardware / Runtime")
+    if cfg.general.num_gpus > 0:
+        logger.info(f"Using {cfg.general.num_gpus} GPU(s)")
+        for i in range(cfg.general.num_gpus):
+            logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+    else:
+        logger.info("Running on CPU")
+
+    logger.info(f"Save directory        : {cfg.general.save_dir}")
+    logger.info("============================================")
+
+
 def train(config_file):
     """ Medical image segmentation training engine
     :param config_file: the absolute path of the input configuration file
@@ -158,6 +190,7 @@ def train(config_file):
     # enable logging
     log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
     logger = setup_logger(log_file, 'lmk_det3d')
+    log_training_setup(cfg, logger)
 
     # control randomness during training
     np.random.seed(cfg.debug.seed)
@@ -204,10 +237,9 @@ def train(config_file):
 
 
     batch_idx = batch_start
+    prev_epoch_idx = last_save_epoch
     train_loss_epoch = 0
     train_batch_size = 0
-    prev_epoch_idx = 0
-    last_save_epoch = -1
 
     for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader, start=batch_start):
         begin_t = time.time()
@@ -221,15 +253,23 @@ def train(config_file):
         batch_duration = time.time() - begin_t
         sample_duration = batch_duration / batch_size
 
+        writer.add_scalar('Loss_batch/TrainLoss', train_loss.item(), batch_idx)
+
         # Validation and Logging
         if epoch_idx > prev_epoch_idx:
             avg_train_loss_per_sample = train_loss_epoch / train_batch_size
-            val_loss_epoch = val_step(cfg, net, val_data_loader, loss_func)
+
+            force_val = (cfg.general.resume_epoch >= 0 and prev_epoch_idx == cfg.general.resume_epoch)            
+            if epoch_idx == 1 or epoch_idx % cfg.val.interval == 0 or force_val:
+                avg_val_loss_per_sample = val_step(cfg, net, val_data_loader, loss_func)
 
             msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss: {:.4f}, time: {:.4f} s/vol'
-            logger.info(msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample, val_loss_epoch, sample_duration))
+            logger.info(msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample, avg_val_loss_per_sample, sample_duration))
 
-            writer.add_scalar('Val/Loss', val_loss_epoch, batch_idx)
+            writer.add_scalars('Loss_epoch', {
+                'Train': avg_train_loss_per_sample,
+                'Validation': avg_val_loss_per_sample
+                }, epoch_idx)
 
             # Reset per-epoch stats
             train_loss_epoch = 0
@@ -240,8 +280,7 @@ def train(config_file):
             if epoch_idx % cfg.train.save_epochs == 0 and last_save_epoch != epoch_idx:
                 save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
                 last_save_epoch = epoch_idx
-
-        writer.add_scalar('Train/Loss', train_loss.item(), batch_idx)
+        
         batch_idx += 1
 
     writer.close()

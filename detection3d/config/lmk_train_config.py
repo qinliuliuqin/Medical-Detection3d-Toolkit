@@ -113,14 +113,14 @@ __C.train.lr = 1e-4
 
 __C.train.betas = (0.9, 0.999)
 
-__C.train.save_epochs = 1000
+__C.train.save_epochs = 10
 
 ##################################
 # validation parameters
 ##################################
 __C.val = {}
 
-__C.val.interval = 10
+__C.val.interval = 1
 
 __C.val.batch_size = 4
 
