@@ -6,14 +6,14 @@ PyTorch implementation of the volumetric landmark detection engine proposed in t
 </p>
 
 ## Installation
-The code is tested with ``python=3.8.8``, ``torch=2.0.0``, and ``torchvision=0.15.0`` on an A6000 GPU.
+The code is tested with ``python=3.9``, ``torch=2.7.0``, and ``torchvision=0.22.0`` on an A6000 GPU.
 ```
 git clone https://github.com/qinliuliuqin/Medical-Detection3d-Toolkit
 cd Medical-Detection3d-Toolkit
 ```
 Create a new conda environment and install required packages accordingly.
 ```
-conda create -n det3d python=3.8.8
+conda create -n det3d python=3.9
 conda activate det3d
 pip3 install -r requirements.txt
 ```

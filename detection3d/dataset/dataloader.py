@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader
 from detection3d.dataset.landmark_dataset import LandmarkDetectionDataset
-from detection3d.dataset.sampler import EpochConcateSampler
+from detection3d.dataset.sampler import EpochConcateSampler, RandomSubsetSampler
 
 
 def get_landmark_detection_dataloader(cfg, mode):
@@ -26,15 +26,16 @@ def get_landmark_detection_dataloader(cfg, mode):
             augmentation_translation=cfg.augmentation.translation,
             interpolation=cfg.dataset.interpolation,
             crop_normalizers=cfg.dataset.crop_normalizers)
-
+        
+        num_cases = len(dataset)
         sampler = EpochConcateSampler(dataset, cfg.train.epochs)
         data_loader = DataLoader(dataset, sampler=sampler, batch_size=cfg.train.batch_size,
-                                 num_workers=cfg.train.num_threads, pin_memory=True)
+                                    num_workers=cfg.train.num_threads, pin_memory=True)
 
     else:
         dataset = LandmarkDetectionDataset(
             mode='val',
-            image_list_file=cfg.general.training_image_list_file,
+            image_list_file=cfg.general.validation_image_list_file,
             target_landmark_label=cfg.general.target_landmark_label,
             crop_size=cfg.dataset.crop_size,
             crop_spacing=cfg.dataset.crop_spacing,
@@ -51,8 +52,9 @@ def get_landmark_detection_dataloader(cfg, mode):
             interpolation=cfg.dataset.interpolation,
             crop_normalizers=cfg.dataset.crop_normalizers)
 
-        sampler = EpochConcateSampler(dataset, cfg.train.epochs)
-        data_loader = DataLoader(dataset, sampler=sampler, batch_size=1,
-                                 num_workers=1, pin_memory=True)
+        num_cases = int(len(dataset) * cfg.val.eval_fraction)// 2 * 2
+        sampler = RandomSubsetSampler(dataset, num_cases, seed=100)
+        data_loader = DataLoader(dataset, sampler=sampler, batch_size=cfg.val.batch_size,
+                                    num_workers=cfg.val.num_threads, pin_memory=True)
 
-    return data_loader, dataset.num_modality(), dataset.num_landmark_classes, len(dataset)
+    return data_loader, dataset.num_modality(), dataset.num_landmark_classes, num_cases

@@ -11,7 +11,7 @@ __C.general = {}
 
 __C.general.training_image_list_file = '../assets/train.csv'
 
-__C.general.validation_image_list_file = ''
+__C.general.validation_image_list_file = '../assets/val.csv'
 
 # landmark label starts from 1, 0 represents the background.
 __C.general.target_landmark_label = {
@@ -46,7 +46,7 @@ __C.dataset.positive_upper_bound = 3    # voxel
 
 __C.dataset.negative_lower_bound = 6    # voxel
 
-__C.dataset.num_pos_patches_per_image = 8
+__C.dataset.num_pos_patches_per_image = 8 # This should be same as number of landmarks 
 
 __C.dataset.num_neg_patches_per_image = 16
 
@@ -101,6 +101,8 @@ __C.net.name = 'vdnet'
 ##################################
 __C.train = {}
 
+__C.train.use_amp = True
+
 __C.train.epochs = 2001
 
 __C.train.batch_size = 4
@@ -111,7 +113,20 @@ __C.train.lr = 1e-4
 
 __C.train.betas = (0.9, 0.999)
 
-__C.train.save_epochs = 1000
+__C.train.save_epochs = 10
+
+##################################
+# validation parameters
+##################################
+__C.val = {}
+
+__C.val.interval = 1
+
+__C.val.batch_size = 4
+
+__C.val.num_threads = 4
+
+__C.val.eval_fraction = 1
 
 ##################################
 # debug parameters
