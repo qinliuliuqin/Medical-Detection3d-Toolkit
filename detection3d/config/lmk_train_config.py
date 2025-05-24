@@ -11,7 +11,7 @@ __C.general = {}
 
 __C.general.training_image_list_file = '../assets/train.csv'
 
-__C.general.validation_image_list_file = '../assets/test.csv'
+__C.general.validation_image_list_file = '../assets/val.csv'
 
 # landmark label starts from 1, 0 represents the background.
 __C.general.target_landmark_label = {

@@ -49,13 +49,12 @@ def compute_landmark_mask_loss(outputs, landmark_masks, loss_function):
     return loss
 
 
-def train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, optimizer, scaler, batch_idx):
+def train_step(cfg, net, crops, landmark_masks, frames, filenames, loss_func, optimizer, scaler, batch_idx):
     net.train()
 
     if cfg.general.num_gpus > 0:
         crops = crops.cuda()
         landmark_masks = landmark_masks.cuda()
-        landmark_coords = landmark_coords.cuda()
 
     optimizer.zero_grad()
 
@@ -246,7 +245,7 @@ def train(config_file):
         batch_size = crops.size(0)
         train_batch_size += batch_size
 
-        train_loss = train_step(cfg, net, crops, landmark_masks, landmark_coords, frames, filenames, loss_func, opt, scaler, batch_idx)
+        train_loss = train_step(cfg, net, crops, landmark_masks, frames, filenames, loss_func, opt, scaler, batch_idx)
         train_loss_epoch += train_loss.item()
 
         epoch_idx = batch_idx * cfg.train.batch_size // num_train_cases
