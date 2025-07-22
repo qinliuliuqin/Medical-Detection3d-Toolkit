@@ -336,6 +336,7 @@ def detection(input_path, model_folder, gpu_id, return_landmark_file, save_landm
 
           landmark_name = landmark_name_list[landmark_label_reorder[j]]
           if voxel_coordinate is not None:
+            # convert voxel coordinate to world coordinate (the voxel_coordinate should be in double-precision?)
             world_coordinate = masked_landmark_mask_prob.TransformContinuousIndexToPhysicalPoint(voxel_coordinate)
             print("world coordinate of volume {0} landmark {1} is:[{2},{3},{4}]".format(
               file_name_list[i], j, world_coordinate[0], world_coordinate[1], world_coordinate[2]))
