@@ -54,11 +54,11 @@ def read_image_list(image_list_file, mode):
   if mode == 'test':
     return image_name_list, image_path_list, None, None
 
-  elif mode == 'train' or mode == 'validation':
+  elif mode == 'train' or mode == 'val':
     landmark_file_path_list = images_df['landmark_file_path'].tolist()
     landmark_mask_path_list = images_df['landmark_mask_path'].tolist()
     return image_name_list, image_path_list, landmark_file_path_list, \
-           landmark_mask_path_list
+            landmark_mask_path_list
 
   else:
     raise ValueError('Unsupported mode type.')
@@ -69,25 +69,25 @@ class LandmarkDetectionDataset(Dataset):
   Training dataset for multi-landmark detection.
   """
   def __init__(self,
-               mode,
-               image_list_file,
-               target_landmark_label,
-               crop_size,
-               crop_spacing,
-               sampling_method,
-               sampling_size,
-               positive_upper_bound,
-               negative_lower_bound,
-               num_pos_patches_per_image,
-               num_neg_patches_per_image,
-               augmentation_turn_on,
-               augmentation_orientation_axis,
-               augmentation_orientation_radian,
-               augmentation_translation,
-               interpolation,
-               crop_normalizers):
-    self.mode = mode
-    assert self.mode == 'train' or self.mode == 'Train'
+                mode,
+                image_list_file,
+                target_landmark_label,
+                crop_size,
+                crop_spacing,
+                sampling_method,
+                sampling_size,
+                positive_upper_bound,
+                negative_lower_bound,
+                num_pos_patches_per_image,
+                num_neg_patches_per_image,
+                augmentation_turn_on,
+                augmentation_orientation_axis,
+                augmentation_orientation_radian,
+                augmentation_translation,
+                interpolation,
+                crop_normalizers):
+    self.mode = mode.lower()
+    assert self.mode in ['train', 'val']
 
     self.image_name_list, self.image_path_list, self.landmark_file_path, self.landmark_mask_path = \
       read_image_list(image_list_file, self.mode)
@@ -139,22 +139,26 @@ class LandmarkDetectionDataset(Dataset):
     return self.num_organ_classes
 
   def global_sample(self, image):
-    """ random sample a position in the image
-    :param image: a SimpleITK image object which should be in the RAI coordinate
-    :return: a world position in the RAI coordinate
-    """
-    assert isinstance(image, sitk.Image)
+      """ random sample a position in the image
+      :param image: a SimpleITK image object which should be in the RAI coordinate
+      :return: a world position in the RAI coordinate
+      """
+      assert isinstance(image, sitk.Image)
 
-    origin = image.GetOrigin()
-    im_size_mm = [image.GetSize()[idx] * image.GetSpacing()[idx] for idx in range(3)]
-    crop_size_mm = self.crop_size * self.crop_spacing
+      origin = image.GetOrigin()
+      im_size_mm = [image.GetSize()[idx] * image.GetSpacing()[idx] for idx in range(3)]
+      crop_size_mm = self.crop_size * self.crop_spacing
 
-    sp = np.array(origin, dtype=np.double)
-    for i in range(3):
-      if im_size_mm[i] > crop_size_mm[i]:
-        sp[i] = origin[i] + np.random.uniform(0, im_size_mm[i] - crop_size_mm[i])
-    center = sp + crop_size_mm / 2
-    return center
+      im_size_mm = np.array(im_size_mm, dtype=np.double)
+      crop_size_mm = np.array(crop_size_mm, dtype=np.double)
+      origin = np.array(origin, dtype=np.double)
+
+      # Compute random starting point within bounds
+      max_offsets_mm = np.clip(im_size_mm - crop_size_mm, 0, None)
+      crop_corner_start = origin + np.random.uniform(0, 1, size=3) * max_offsets_mm
+
+      crop_center_mm = crop_corner_start + crop_size_mm / 2
+      return crop_center_mm
 
   def center_sample(self, image):
     """ return the world coordinate of the image center
@@ -229,8 +233,8 @@ class LandmarkDetectionDataset(Dataset):
       label = landmark_df['label'][idx]
       reordered_selected_mask_npy[abs(selected_mask_npy - label) < 1e-1] = idx + 1
 
-    reordered_selected_mask = sitk.GetImageFromArray(reordered_selected_mask_npy)
-    reordered_selected_mask.CopyInformation(landmark_mask)
+    reordered_selected_mask = sitk.GetImageFromArray(reordered_selected_mask_npy) # This makes the mask as nifti image
+    reordered_selected_mask.CopyInformation(landmark_mask) #Copies Physical world space such as origin , spacing etc.
 
     return reordered_selected_mask
 
@@ -253,26 +257,22 @@ class LandmarkDetectionDataset(Dataset):
 
     # sampling a crop center
     if self.sampling_method == 'GLOBAL':
-      center = self.global_sample(landmark_mask)
+      crop_center_mm = self.global_sample(landmark_mask) # From landmark_mask find a random point in mm.
 
     else:
       raise ValueError('Only support CENTER, GLOBAL, MASK, and HYBRID sampling methods')
 
     # random translation
-    center += np.random.uniform(-self.augmentation_translation, self.augmentation_translation, size=[3])
+    crop_center_mm += np.random.uniform(-self.augmentation_translation, self.augmentation_translation, size=[3])
 
     # sample a crop from image and normalize it
     for idx in range(len(images)):
-      images[idx] = crop_image(
-        images[idx], center, self.crop_size, self.crop_spacing, self.interpolation
-      )
+      images[idx] = crop_image(images[idx], crop_center_mm, self.crop_size, self.crop_spacing, self.interpolation)
       if self.crop_normalizers[idx] is not None:
         images[idx] = self.crop_normalizers[idx](images[idx])
 
-    landmark_mask = crop_image(landmark_mask, center, self.crop_size, self.crop_spacing, 'NN')
-    landmark_mask = self.select_samples_in_the_landmark_mask(
-      landmark_mask, self.landmark_coords_dict[image_name]
-    )
+    landmark_mask = crop_image(landmark_mask, crop_center_mm, self.crop_size, self.crop_spacing, 'NN')
+    landmark_mask = self.select_samples_in_the_landmark_mask(landmark_mask, self.landmark_coords_dict[image_name])
 
     # convert image and masks to tensors
     image_tensor = convert_image_to_tensor(images)
@@ -290,4 +290,4 @@ class LandmarkDetectionDataset(Dataset):
     image_frame = get_image_frame(images[0])
 
     return image_tensor, landmark_mask_tensor, \
-           landmark_coords_tensor, image_frame, image_name
+            landmark_coords_tensor, image_frame, image_name
