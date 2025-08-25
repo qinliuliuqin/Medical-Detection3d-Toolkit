@@ -111,6 +111,8 @@ __C.train.num_threads = 4
 
 __C.train.lr = 1e-4
 
+__C.train.weight_decay = 1e-4
+
 __C.train.betas = (0.9, 0.999)
 
 __C.train.save_epochs = 10

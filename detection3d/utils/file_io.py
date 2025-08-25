@@ -1,6 +1,7 @@
 import codecs
 import importlib
 import os
+import re
 import sys
 import logging
 
@@ -70,3 +71,29 @@ def readlines(file):
     for i in range(len(linelist)):
         linelist[i] = linelist[i].rstrip('\n')
     return linelist
+
+
+def get_next_run_dir(base_dir: str) -> str:
+    """
+    Find the next run directory name in base_dir.
+    E.g. if run_1..run_7 exist, returns run_8.
+    """
+    os.makedirs(base_dir, exist_ok=True)  # Ensure base dir exists
+
+    # List all dirs starting with 'run_'
+    run_dirs = [d for d in os.listdir(base_dir) 
+                if os.path.isdir(os.path.join(base_dir, d)) and d.startswith("run")]
+
+    # Extract run numbers using regex
+    run_nums = []
+    for d in run_dirs:
+        match = re.match(r"run[_-]?(\d+)", d)
+        if match:
+            run_nums.append(int(match.group(1)))
+
+    next_num = max(run_nums) + 1 if run_nums else 1
+    next_run_name = f"run_{next_num}"
+    next_run_path = os.path.join(base_dir, next_run_name)
+
+    os.makedirs(next_run_path, exist_ok=True)  # Create the new folder
+    return next_run_path
