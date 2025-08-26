@@ -1,5 +1,5 @@
 torch==2.7.1
-torchvision==0.22
+torchvision
 easydict==1.13
 tqdm==4.67.1
 scipy
@@ -7,4 +7,6 @@ tensorboardX
 pandas
 vtk
 SimpleITK
+monai
+torchio
 

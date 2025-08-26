@@ -4,16 +4,16 @@ import torch
 import shutil
 
 
-def get_checkpoint_folder(chk_root, epoch):
+def get_checkpoint_folder(chk_root, chk_epoch):
   """
-  Get the checkpoint's folder with the specified epoch.
+  Get the checkpoint's folder with the specified chk_epoch.
   :param chk_root: the check point root directory, which may contain multiple checkpoints.
-  :param epoch: the epoch of the checkpoint, set -1 to get the latest epoch.
+  :param chk_epoch: the epoch of the checkpoint, set -1 to get the latest epoch.
   :return: the folder containing the checkpoint with the specified epoch.
   """
   assert os.path.isdir(chk_root), 'The folder does not exist: {}'.format(chk_root)
 
-  if epoch < 0:
+  if chk_epoch < 0:
     latest_epoch = -1
     chk_folders = os.path.join(chk_root, 'chk_*')
     for folder in glob.glob(chk_folders):
@@ -23,9 +23,9 @@ def get_checkpoint_folder(chk_root, epoch):
       if cur_epoch > latest_epoch:
         latest_epoch = cur_epoch
 
-    epoch = latest_epoch
+    chk_epoch = latest_epoch
 
-  return os.path.join(chk_root, 'chk_{}'.format(epoch))
+  return os.path.join(chk_root, 'chk_{}'.format(chk_epoch)), chk_epoch
 
 
 def load_checkpoint(epoch_idx, net, opt, save_dir):
@@ -77,6 +77,7 @@ def save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, conf
              'state_dict':            net.state_dict(),
              'crop_spacing':          cfg.dataset.crop_spacing,
              'crop_size':             cfg.dataset.crop_size,
+             'pad_size':              cfg.dataset.pad_size,
              'interpolation':         cfg.dataset.interpolation,
              'in_channels':           num_modality,
              'num_landmark_classes':  len(cfg.general.target_landmark_label),

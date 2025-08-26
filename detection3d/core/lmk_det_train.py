@@ -10,7 +10,7 @@ from tensorboardX import SummaryWriter
 from torch.amp import autocast, GradScaler
 from detection3d.utils.image_tools import save_intermediate_results
 from detection3d.loss.focal_loss import FocalLoss
-from detection3d.utils.file_io import load_config, setup_logger, get_next_run_dir
+from detection3d.utils.file_io import load_config, setup_logger, get_run_dir
 from detection3d.utils.model_io import load_checkpoint, save_landmark_detection_checkpoint
 from detection3d.dataset.dataloader import get_landmark_detection_dataloader
 from tqdm import tqdm
@@ -176,7 +176,7 @@ def train(config_file):
 
     # load config file
     cfg = load_config(config_file)
-    cfg.general.save_dir =  get_next_run_dir(cfg.general.save_dir)
+    cfg.general.save_dir =  get_run_dir(cfg.general.save_dir, mode="next")
 
     scaler = GradScaler() if cfg.train.use_amp else None
 
