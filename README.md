@@ -15,7 +15,8 @@ Create a new conda environment and install required packages accordingly.
 ```
 conda create -n det3d python=3.9
 conda activate det3d
-pip3 install -r requirements.txt
+pip install uv
+uv pip install -r requirements.txt
 ```
 
 ## Data
