@@ -4,9 +4,10 @@ import pandas as pd
 import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset
+import torchio as tio
 
 from detection3d.utils.image_tools import select_random_voxels_in_multi_class_mask, \
-  crop_image, convert_image_to_tensor, get_image_frame
+  crop_image, convert_image_to_tensor, get_image_frame, pad_image
 from detection3d.utils.landmark_utils import is_world_coordinate_valid, \
   is_voxel_coordinate_valid
 
@@ -44,24 +45,54 @@ def read_landmark_coords(image_name_list, landmark_file_path, target_landmark_la
 
 
 def read_image_list(image_list_file, mode):
-  """
-  Reads the training image list file and returns a list of image file names.
-  """
-  images_df = pd.read_csv(image_list_file)
-  image_name_list = images_df['image_name'].tolist()
-  image_path_list = images_df['image_path'].tolist()
+    """
+    Reads the image list CSV file and returns file paths depending on the mode.
 
-  if mode == 'test':
-    return image_name_list, image_path_list, None, None
+    Expected CSV structure:
+    -----------------------------------------------------------
+    For 'train' or 'val' mode:
+        Columns:
+            - image_name           : string identifier for the image
+            - image_path           : path to the image file
+            - landmark_file_path   : path to landmark file (e.g., JSON/CSV/TXT)
+            - landmark_mask_path   : path to landmark mask file (e.g., NIfTI/PNG)
 
-  elif mode == 'train' or mode == 'val':
-    landmark_file_path_list = images_df['landmark_file_path'].tolist()
-    landmark_mask_path_list = images_df['landmark_mask_path'].tolist()
-    return image_name_list, image_path_list, landmark_file_path_list, \
-            landmark_mask_path_list
+    For 'test' mode:
+        Columns:
+            - image_name           : string identifier for the image
+            - image_path           : path to the image file
 
-  else:
-    raise ValueError('Unsupported mode type.')
+    Returns:
+        train/val → (image_name_list, image_path_list, landmark_file_path_list, landmark_mask_path_list)
+        test      → (image_name_list, image_path_list, None, None)
+    """
+
+    images_df = pd.read_csv(image_list_file)
+
+    # Basic required columns
+    required_cols = ['image_name', 'image_path']
+    for col in required_cols:
+        assert col in images_df.columns, f"Missing required column: '{col}' in CSV"
+
+    image_name_list = images_df['image_name'].tolist()
+    image_path_list = images_df['image_path'].tolist()
+
+    if mode == 'test':
+        return image_name_list, image_path_list, None, None
+
+    elif mode in ['train', 'val']:
+        # Additional required columns for train/val
+        extra_cols = ['landmark_file_path', 'landmark_mask_path']
+        for col in extra_cols:
+            assert col in images_df.columns, f"Missing required column: '{col}' for mode='{mode}'"
+
+        landmark_file_path_list = images_df['landmark_file_path'].tolist()
+        landmark_mask_path_list = images_df['landmark_mask_path'].tolist()
+
+        return image_name_list, image_path_list, landmark_file_path_list, landmark_mask_path_list
+
+    else:
+        raise ValueError(f"Unsupported mode type: {mode}")
 
 
 class LandmarkDetectionDataset(Dataset):
@@ -73,6 +104,7 @@ class LandmarkDetectionDataset(Dataset):
                 image_list_file,
                 target_landmark_label,
                 crop_size,
+                pad_size,
                 crop_spacing,
                 sampling_method,
                 sampling_size,
@@ -81,11 +113,10 @@ class LandmarkDetectionDataset(Dataset):
                 num_pos_patches_per_image,
                 num_neg_patches_per_image,
                 augmentation_turn_on,
-                augmentation_orientation_axis,
-                augmentation_orientation_radian,
-                augmentation_translation,
+                aug_cfg,
                 interpolation,
                 crop_normalizers):
+    
     self.mode = mode.lower()
     assert self.mode in ['train', 'val']
 
@@ -99,6 +130,7 @@ class LandmarkDetectionDataset(Dataset):
     )
     self.crop_spacing = np.array(crop_spacing, dtype=np.float32)
     self.crop_size = np.array(crop_size, dtype=np.float32)
+    self.pad_size = pad_size
     self.sampling_method = sampling_method
     self.sampling_size = sampling_size
     self.positive_upper_bound = positive_upper_bound
@@ -110,11 +142,13 @@ class LandmarkDetectionDataset(Dataset):
     # + 1 for background
     self.num_landmark_classes = len(target_landmark_label) + 1
     self.augmentation_turn_on = augmentation_turn_on
-    self.augmentation_orientation_radian = augmentation_orientation_radian
-    self.augmentation_orientation_axis = augmentation_orientation_axis
-    self.augmentation_translation = np.array(augmentation_translation, dtype=np.float32)
     self.interpolation = interpolation
     self.crop_normalizers = crop_normalizers
+
+    if self.augmentation_turn_on:
+      self.aug_transform = self.build_transform(aug_cfg)
+
+    self.augmentation_translation_lmk = aug_cfg.translation_lmk
 
     self.positive_perturbs = []
     for dz in range(-positive_upper_bound, positive_upper_bound):
@@ -238,6 +272,107 @@ class LandmarkDetectionDataset(Dataset):
 
     return reordered_selected_mask
 
+  def build_transform(self, cfg):
+      transforms = []
+
+      if cfg.affine_turn_on:
+          transforms.append(
+              tio.RandomAffine(
+                  scales=cfg.scales,
+                  degrees=cfg.rotation,
+                  translation=cfg.translation,
+                  p=cfg.affine_p
+              )
+          )
+
+      if cfg.flip_turn_on:
+          transforms.append(
+              tio.RandomFlip(
+                  axes=0,
+                  p=cfg.flip_p
+              )
+          )
+
+      if cfg.elastic_turn_on:
+          transforms.append(
+              tio.RandomElasticDeformation(
+                  num_control_points=cfg.elastic_num_control_points,
+                  max_displacement=cfg.elastic_max_displacement,
+                  locked_borders=cfg.elastic_locked_borders,
+                  include=('image',),
+                  p=cfg.elastic_p
+              )
+          )
+
+      if cfg.motion_turn_on:
+          transforms.append(
+              tio.RandomMotion(
+                  num_transforms=cfg.motion_num_transforms,
+                  include=('image',),
+                  p=cfg.motion_p
+              )
+          )
+
+      if cfg.noise_turn_on:
+          transforms.append(
+              tio.RandomNoise(
+                  mean=cfg.noise_mean,
+                  std=cfg.noise_std,
+                  include=('image',),
+                  p=cfg.noise_p
+              )
+          )
+
+      if cfg.gamma_turn_on:
+          transforms.append(
+              tio.RandomGamma(
+                  log_gamma=cfg.log_gamma,
+                  include=('image',),
+                  p=cfg.gamma_p
+              )
+          )
+
+      return tio.Compose(transforms)
+  
+  def augment(self, image, mask=None):
+      """
+      Apply TorchIO augmentations to a 3D CBCT image and optional mask.
+      
+      Args:
+          image (SimpleITK.Image): Input cropped image in physical space.
+          mask (SimpleITK.Image, optional): Corresponding label/landmark mask.
+      
+      Returns:
+          (image_aug, mask_aug) if mask is provided, else image_aug only
+      """
+
+      # Convert to TorchIO tensors (C, H, W, D) format
+      image_tensor = sitk.GetArrayFromImage(image).astype(np.float32)[None]
+      subject_dict = {
+          'image': tio.ScalarImage(tensor=image_tensor)
+      }
+
+      if mask is not None:
+          mask_tensor = sitk.GetArrayFromImage(mask).astype(np.float32)[None]
+          subject_dict['mask'] = tio.LabelMap(tensor=mask_tensor)
+
+      subject = tio.Subject(subject_dict)
+
+      # Apply the composed transform
+      transformed = self.aug_transform(subject)
+
+      # Convert back to SimpleITK image
+      image_aug = sitk.GetImageFromArray(transformed['image'].data.squeeze(0).numpy())
+      image_aug.CopyInformation(image)
+
+      if mask is not None:
+          mask_aug = sitk.GetImageFromArray(transformed['mask'].data.squeeze(0).numpy())
+          mask_aug.CopyInformation(mask)
+          return image_aug, mask_aug
+
+      return image_aug
+
+
   def __getitem__(self, index):
     """ get a training sample - image(s) and segmentation pair
     :param index:  the sample index
@@ -254,6 +389,9 @@ class LandmarkDetectionDataset(Dataset):
     landmark_coords = self.landmark_coords_dict[image_name]
     landmark_mask_path = self.landmark_mask_path[index]
     landmark_mask = sitk.ReadImage(landmark_mask_path, sitk.sitkFloat32)
+    
+    image = pad_image(image, self.pad_size, pad_value=0)
+    landmark_mask = pad_image(landmark_mask, self.pad_size, pad_value=-1)
 
     # sampling a crop center
     if self.sampling_method == 'GLOBAL':
@@ -263,16 +401,22 @@ class LandmarkDetectionDataset(Dataset):
       raise ValueError('Only support CENTER, GLOBAL, MASK, and HYBRID sampling methods')
 
     # random translation
-    crop_center_mm += np.random.uniform(-self.augmentation_translation, self.augmentation_translation, size=[3])
+    crop_center_mm += np.random.uniform(-self.augmentation_translation_lmk, self.augmentation_translation_lmk, size=[3])
 
     # sample a crop from image and normalize it
+    # We are working with one image and one mask at a time.
+    
+    landmark_mask = crop_image(landmark_mask, crop_center_mm, self.crop_size, self.crop_spacing, 'NN')
+    landmark_mask = self.select_samples_in_the_landmark_mask(landmark_mask, self.landmark_coords_dict[image_name])
+
     for idx in range(len(images)):
       images[idx] = crop_image(images[idx], crop_center_mm, self.crop_size, self.crop_spacing, self.interpolation)
       if self.crop_normalizers[idx] is not None:
-        images[idx] = self.crop_normalizers[idx](images[idx])
+          images[idx] = self.crop_normalizers[idx](images[idx])
 
-    landmark_mask = crop_image(landmark_mask, crop_center_mm, self.crop_size, self.crop_spacing, 'NN')
-    landmark_mask = self.select_samples_in_the_landmark_mask(landmark_mask, self.landmark_coords_dict[image_name])
+      # Apply augmentations
+      if self.mode == 'train' and self.augmentation_turn_on:
+          images[idx], landmark_mask = self.augment(images[idx], landmark_mask)
 
     # convert image and masks to tensors
     image_tensor = convert_image_to_tensor(images)

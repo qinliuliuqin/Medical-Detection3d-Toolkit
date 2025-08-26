@@ -3,6 +3,7 @@ import os
 import SimpleITK as sitk
 import torch
 import vtk
+from typing import List
 
 
 type_conversion_from_numpy_to_sitk = {
@@ -571,3 +572,29 @@ def get_bounding_box(mask, selected_labels):
         bbox_start_voxel, bbox_end_voxel = None, None
 
     return bbox_start_voxel, bbox_end_voxel
+
+
+def pad_image(
+    img: sitk.Image,
+    pad: List[int],          # strictly a list of 3 ints
+    pad_value: float = 0.0,
+) -> sitk.Image:
+    """
+    Pad a 3D SimpleITK image symmetrically along each axis.
+
+    Args:
+        img: SimpleITK image.
+        pad: List of 3 ints [x, y, z] indicating padding per axis.
+        pad_value: Constant value to pad with.
+    """
+    dim = img.GetDimension()
+    if dim != 3:
+        raise ValueError(f"Expected 3D image, got {dim}D")
+
+    assert len(pad) == 3
+
+    pad_filter = sitk.ConstantPadImageFilter()
+    pad_filter.SetPadLowerBound(pad)
+    pad_filter.SetPadUpperBound(pad)
+    pad_filter.SetConstant(pad_value)
+    return pad_filter.Execute(img)

@@ -131,7 +131,7 @@ def val_step(cfg, network, val_data_loader, loss_function):
     return avg_val_loss_per_sample
 
 
-def log_training_setup(cfg, logger, save_dir):
+def log_training_setup(cfg, logger):
     logger.info("========== Training Configuration ==========")
 
     # --- Training parameters ---
@@ -163,7 +163,7 @@ def log_training_setup(cfg, logger, save_dir):
     else:
         logger.info("Running on CPU")
 
-    logger.info(f"Save directory        : {save_dir}")
+    logger.info(f"Save directory        : {cfg.general.save_dir}")
     logger.info("============================================")
 
 
@@ -190,7 +190,7 @@ def train(config_file):
     # enable logging
     log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
     logger = setup_logger(log_file, 'lmk_det3d')
-    log_training_setup(cfg, logger, cfg.general.save_dir)
+    log_training_setup(cfg, logger)
 
     # control randomness during training
     np.random.seed(cfg.debug.seed)
@@ -291,4 +291,5 @@ def train(config_file):
         
         batch_idx += 1
 
+    logger.info(f"Save directory        : {cfg.general.save_dir}")
     writer.close()
