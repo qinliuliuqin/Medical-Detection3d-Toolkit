@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--return_landmark_file", action="store_true",
         help="If set, return detections instead of only saving them")
     
-    parser.add_argument("--save_landmark_file", action="store_true",
+    parser.add_argument("--save_landmark_file", action="store_true", default=True,
         help="If set, save landmark detections to output folder")
     
     parser.add_argument("--window_size", type=int, nargs=3,

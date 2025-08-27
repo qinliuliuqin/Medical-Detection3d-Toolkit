@@ -3,7 +3,7 @@ torchvision
 easydict==1.13
 tqdm==4.67.1
 scipy
-tensorboardX
+tensorboard
 pandas
 vtk
 SimpleITK
