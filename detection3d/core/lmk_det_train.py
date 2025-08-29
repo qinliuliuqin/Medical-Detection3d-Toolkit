@@ -6,13 +6,14 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from torch.amp import autocast, GradScaler
 from detection3d.utils.image_tools import save_intermediate_results
 from detection3d.loss.focal_loss import FocalLoss
-from detection3d.utils.file_io import load_config, setup_logger
+from detection3d.utils.file_io import load_config, setup_logger, get_run_dir
 from detection3d.utils.model_io import load_checkpoint, save_landmark_detection_checkpoint
 from detection3d.dataset.dataloader import get_landmark_detection_dataloader
+from tqdm import tqdm
 
 
 def compute_landmark_mask_loss(outputs, landmark_masks, loss_function):
@@ -149,6 +150,10 @@ def log_training_setup(cfg, logger):
     logger.info(f"Validation threads    : {cfg.val.num_threads}")
     logger.info(f"Eval fraction         : {cfg.val.eval_fraction}")
 
+    # --- Validation parameters ---
+    logger.info(">>> Augmentation Status")
+    logger.info(f"Augmentation turn on   : {cfg.augmentation.turn_on}")
+
     # --- Hardware & Save info ---
     logger.info(">>> Hardware / Runtime")
     if cfg.general.num_gpus > 0:
@@ -171,25 +176,11 @@ def train(config_file):
 
     # load config file
     cfg = load_config(config_file)
+    mode = "current" if cfg.general.resume_epoch >= 0 else "next"
+    cfg.general.save_dir =  get_run_dir(cfg.general.save_dir, mode)
+    print(cfg.general.save_dir)
 
     scaler = GradScaler() if cfg.train.use_amp else None
-
-
-    # clean the existing folder if training from scratch
-    if os.path.isdir(cfg.general.save_dir) and cfg.general.resume_epoch < 0:
-        shutil.rmtree(cfg.general.save_dir)
-
-    # create a folder for saving training files if it does not exist
-    if not os.path.isdir(cfg.general.save_dir):
-        os.makedirs(cfg.general.save_dir)
-
-    # update the training config file
-    shutil.copy(config_file, os.path.join(cfg.general.save_dir, os.path.basename(config_file)))
-
-    # enable logging
-    log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
-    logger = setup_logger(log_file, 'lmk_det3d')
-    log_training_setup(cfg, logger)
 
     # control randomness during training
     np.random.seed(cfg.debug.seed)
@@ -199,7 +190,7 @@ def train(config_file):
 
     train_data_loader, num_modality, num_landmark_classes, num_train_cases = \
         get_landmark_detection_dataloader(cfg, 'train')
-    
+
     val_data_loader, _, _, num_val_cases = \
         get_landmark_detection_dataloader(cfg, 'val')
 
@@ -208,20 +199,20 @@ def train(config_file):
     max_stride = net.max_stride()
     net_module.parameters_kaiming_init(net)
 
+    # training optimizer
+    opt = optim.AdamW(net.parameters(), lr=cfg.train.lr, betas=cfg.train.betas, weight_decay=cfg.train.weight_decay)
+
     if cfg.general.num_gpus > 0:
         net = nn.parallel.DataParallel(net, device_ids=list(range(cfg.general.num_gpus)))
         net = net.cuda()
 
     assert np.all(np.array(cfg.dataset.crop_size) % max_stride == 0), 'crop size not divisible by max stride'
 
-    # training optimizer
-    opt = optim.Adam(net.parameters(), lr=cfg.train.lr, betas=cfg.train.betas)
-
-    # load checkpoint if resume epoch > 0
+    # load checkpoint if resume training
     if cfg.general.resume_epoch >= 0:
-        last_save_epoch, batch_start = load_checkpoint(cfg.general.resume_epoch, net, opt, cfg.general.save_dir)
+        start_epoch, start_batch_idx = load_checkpoint(cfg.general.resume_epoch, net, opt, scaler, cfg.general.save_dir)
     else:
-        last_save_epoch, batch_start = 0, 0
+        start_epoch, start_batch_idx = 0, 0
 
     if cfg.landmark_loss.name == 'Focal':
         # reuse focal loss if exists
@@ -231,16 +222,35 @@ def train(config_file):
         
     else:
         raise ValueError('Unknown loss function')
+    
+    # create a folder for saving training files if it does not exist
+    os.makedirs(cfg.general.save_dir, exist_ok=True)
 
-    writer = SummaryWriter(os.path.join(cfg.general.save_dir, 'tensorboard'))
+    writer = SummaryWriter(os.path.join(cfg.general.save_dir,f"tensorboard_e{start_epoch:04d}_b{start_batch_idx:06d}"))
 
+    # copy the training config file
+    shutil.copy(config_file, os.path.join(cfg.general.save_dir, os.path.basename(config_file)))
 
-    batch_idx = batch_start
-    prev_epoch_idx = last_save_epoch
+    # enable logging
+    log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
+    logger = setup_logger(log_file, 'lmk_det3d')
+    log_training_setup(cfg, logger)
+    
+    train_loader_iter = tqdm(
+        enumerate(train_data_loader, start=start_batch_idx),
+        total=len(train_data_loader),
+        desc="Training",
+        unit="batch"
+    )
+
+    batch_idx = start_batch_idx
+    prev_epoch_idx = start_epoch
     train_loss_epoch = 0
     train_batch_size = 0
 
-    for i, (crops, landmark_masks, landmark_coords, frames, filenames) in enumerate(train_data_loader, start=batch_start):
+    print ("Training started with {} training cases and {} validation cases".format(num_train_cases, num_val_cases))
+
+    for _, (crops, landmark_masks, landmark_coords, frames, filenames) in train_loader_iter:
         begin_t = time.time()
         batch_size = crops.size(0)
         train_batch_size += batch_size
@@ -258,11 +268,11 @@ def train(config_file):
         if epoch_idx > prev_epoch_idx:
             avg_train_loss_per_sample = train_loss_epoch / train_batch_size
 
-            force_val = (cfg.general.resume_epoch >= 0 and prev_epoch_idx == cfg.general.resume_epoch)            
+            force_val = (cfg.general.resume_epoch >= 0 and prev_epoch_idx == cfg.general.resume_epoch)
             if epoch_idx == 1 or epoch_idx % cfg.val.interval == 0 or force_val:
                 avg_val_loss_per_sample = val_step(cfg, net, val_data_loader, loss_func)
 
-            msg = 'epoch: {}, batch: {}, train_loss: {:.4f}, val_loss: {:.4f}, time: {:.4f} s/vol'
+            msg = 'epoch: {}, batch: {}, train_loss: {:.6f}, val_loss: {:.6f}, time: {:.4f} s/vol'
             logger.info(msg.format(epoch_idx, batch_idx, avg_train_loss_per_sample, avg_val_loss_per_sample, sample_duration))
 
             writer.add_scalars('Loss_epoch', {
@@ -276,10 +286,11 @@ def train(config_file):
             prev_epoch_idx = epoch_idx
 
             # Save checkpoint
-            if epoch_idx % cfg.train.save_epochs == 0 and last_save_epoch != epoch_idx:
-                save_landmark_detection_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
-                last_save_epoch = epoch_idx
+            if epoch_idx % cfg.train.save_epochs == 0 and start_epoch != epoch_idx:
+                save_landmark_detection_checkpoint(net, opt, scaler, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality)
+                start_epoch = epoch_idx
         
         batch_idx += 1
 
+    logger.info(f"Save directory        : {cfg.general.save_dir}")
     writer.close()

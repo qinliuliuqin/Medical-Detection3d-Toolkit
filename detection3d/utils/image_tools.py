@@ -3,7 +3,8 @@ import os
 import SimpleITK as sitk
 import torch
 import vtk
-
+from typing import List
+from typing import Sequence, Union
 
 type_conversion_from_numpy_to_sitk = {
     np.int8:     sitk.sitkInt8,
@@ -486,6 +487,50 @@ def pick_largest_connected_component(mask, labels):
 
     return sitk.Cast(largest_cc_multi, mask.GetPixelID())
 
+def pick_largest_connected_component(
+    mask: sitk.Image,
+    labels: Sequence[Union[int, float]],
+    fully_connected: bool = True,
+    min_size_physical: float = 0.0,   # mm^3 in 3D, mm^2 in 2D
+) -> sitk.Image:
+    assert isinstance(mask, sitk.Image)
+
+    # Work in a wide, safe integer type while composing labels
+    WORK_ID = sitk.sitkUInt32
+    largest_cc_multi = sitk.Image(mask.GetSize(), WORK_ID)
+    largest_cc_multi.CopyInformation(mask)
+
+    cc_filter = sitk.ConnectedComponentImageFilter()
+    cc_filter.SetFullyConnected(fully_connected)
+
+    for lab in labels:
+        lab_int = int(lab)
+
+        # Binary for this label
+        lab_bin = sitk.Equal(mask, lab_int)
+
+        # Connected components for this label
+        cc = cc_filter.Execute(lab_bin)
+
+        stats = sitk.LabelShapeStatisticsImageFilter()
+        stats.Execute(cc)
+        if stats.GetNumberOfLabels() == 0:
+            continue
+
+        # Select by physical size (spacing-aware)
+        largest = max(stats.GetLabels(), key=lambda l: stats.GetPhysicalSize(l))
+
+        if min_size_physical > 0.0 and stats.GetPhysicalSize(largest) < min_size_physical:
+            continue
+
+        largest_bin = sitk.Equal(cc, largest)
+        # Compose: cast to wide type, multiply by label value, add
+        largest_cc_multi = sitk.Add(largest_cc_multi, sitk.Cast(largest_bin, WORK_ID) * lab_int)
+
+    # Cast back to the mask's pixel type at the end
+    return sitk.Cast(largest_cc_multi, mask.GetPixelID())
+
+    
 
 def remove_small_connected_component(mask, labels, threshold):
     """ Pick the largest connected component.
@@ -571,3 +616,29 @@ def get_bounding_box(mask, selected_labels):
         bbox_start_voxel, bbox_end_voxel = None, None
 
     return bbox_start_voxel, bbox_end_voxel
+
+
+def pad_image(
+    img: sitk.Image,
+    pad: List[int],          # strictly a list of 3 ints
+    pad_value: float = 0.0,
+) -> sitk.Image:
+    """
+    Pad a 3D SimpleITK image symmetrically along each axis.
+
+    Args:
+        img: SimpleITK image.
+        pad: List of 3 ints [x, y, z] indicating padding per axis.
+        pad_value: Constant value to pad with.
+    """
+    dim = img.GetDimension()
+    if dim != 3:
+        raise ValueError(f"Expected 3D image, got {dim}D")
+
+    assert len(pad) == 3
+
+    pad_filter = sitk.ConstantPadImageFilter()
+    pad_filter.SetPadLowerBound(pad)
+    pad_filter.SetPadUpperBound(pad)
+    pad_filter.SetConstant(pad_value)
+    return pad_filter.Execute(img)

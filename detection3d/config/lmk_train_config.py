@@ -40,6 +40,8 @@ __C.dataset.crop_spacing = [2, 2, 2]      # mm
 
 __C.dataset.crop_size = [96, 96, 96]   # voxel
 
+__C.dataset.pad_size = [8, 8, 8]   # voxel, must be multiple of stride
+
 __C.dataset.sampling_size = [6, 6, 6]      # voxel
 
 __C.dataset.positive_upper_bound = 3    # voxel
@@ -68,15 +70,62 @@ __C.dataset.interpolation = 'LINEAR'
 ##################################
 # data augmentation parameters
 ##################################
+
 __C.augmentation = {}
 
-__C.augmentation.turn_on = False
+__C.augmentation.turn_on = True
 
-__C.augmentation.orientation_axis = [0, 0, 0]  # [x,y,z], axis = [0,0,0] will set it as random axis.
+__C.augmentation.translation_lmk = True
 
-__C.augmentation.orientation_radian = [-30, 30]  # range of rotation in degree, 1 degree = 0.0175 radian
+# ------------------ Affine ------------------
+__C.augmentation.affine_turn_on = True
 
-__C.augmentation.translation = [10, 10, 10]  # mm
+__C.augmentation.scales = [0.9, 1.1]    # isotropic scale range
+
+__C.augmentation.rotation = 10   # NOTE: despite the name, this is in degrees!
+
+__C.augmentation.translation = 5  # mm
+
+__C.augmentation.affine_p = 0.3 
+
+# ------------------ Flip ------------------
+__C.augmentation.flip_turn_on = True
+
+__C.augmentation.flip_p = 0.5
+
+# ------------------ Elastic deformation ------------------
+__C.augmentation.elastic_turn_on = True
+
+__C.augmentation.elastic_num_control_points = 4
+
+__C.augmentation.elastic_max_displacement = 2.0   # mm
+
+__C.augmentation.elastic_locked_borders = 1
+
+__C.augmentation.elastic_p = 0.3
+
+# ------------------ Motion ------------------
+__C.augmentation.motion_turn_on = True
+
+__C.augmentation.motion_num_transforms = 1
+
+__C.augmentation.motion_p = 0.1
+
+# ------------------ Noise ------------------
+__C.augmentation.noise_turn_on = True
+
+__C.augmentation.noise_mean = 0.0
+
+__C.augmentation.noise_std = 0.02
+
+__C.augmentation.noise_p = 0.3
+
+# ------------------ Gamma ------------------
+__C.augmentation.gamma_turn_on = True
+
+__C.augmentation.log_gamma = [-0.2, 0.2]
+
+__C.augmentation.gamma_p = 0.3
 
 ##################################
 # loss function
@@ -111,9 +160,11 @@ __C.train.num_threads = 4
 
 __C.train.lr = 1e-4
 
+__C.train.weight_decay = 1e-4
+
 __C.train.betas = (0.9, 0.999)
 
-__C.train.save_epochs = 10
+__C.train.save_epochs = 1
 
 ##################################
 # validation parameters

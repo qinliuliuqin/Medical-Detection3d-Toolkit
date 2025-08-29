@@ -8,14 +8,14 @@ import SimpleITK as sitk
 import time
 import torch
 from easydict import EasyDict as edict
-
-from detection3d.utils.file_io import load_config
+from detection3d.utils.file_io import load_config, get_resolved_run_dir
 from detection3d.utils.model_io import get_checkpoint_folder
-from detection3d.utils.image_tools import convert_image_to_tensor, convert_tensor_to_image, \
-    resample_spacing, pick_largest_connected_component, weighted_voxel_center
+from detection3d.utils.image_tools import resample_spacing, pick_largest_connected_component, weighted_voxel_center, pad_image
 from detection3d.utils.normalizer import FixedNormalizer, AdaptiveNormalizer
 from detection3d.dataset.landmark_dataset import read_image_list
-
+from typing import Dict, List
+from monai.inferers import sliding_window_inference
+import gc
 
 def read_test_folder(folder_path):
     """ read single-modality input folder
@@ -41,7 +41,7 @@ def read_test_folder(folder_path):
     return file_name_list, file_path_list
 
 
-def load_det_model(model_folder, gpu_id=0):
+def load_det_model(model_folder, gpu_id=0, chk_epoch=-1):
     """ load segmentation model from folder
     :param model_folder:    the folder containing the segmentation model
     :param gpu_id:          the gpu device id to run the segmentation model
@@ -51,8 +51,9 @@ def load_det_model(model_folder, gpu_id=0):
         model_folder)
 
     # load inference config file
-    latest_checkpoint_dir = get_checkpoint_folder(
-        os.path.join(model_folder, 'checkpoints'), -1)
+    latest_checkpoint_dir, chk_epoch = get_checkpoint_folder(
+        os.path.join(model_folder, 'checkpoints'), chk_epoch)
+    
     infer_cfg = load_config(
         os.path.join(latest_checkpoint_dir, 'lmk_infer_config.py'))
 
@@ -91,12 +92,13 @@ def load_det_model(model_folder, gpu_id=0):
         state['crop_size'], state['crop_spacing'], state['max_stride'], state['interpolation']
     model.in_channels, model.num_landmark_classes = \
         state['in_channels'], state['num_landmark_classes']
+    model.pad_size = state['pad_size']
 
     model.crop_normalizers = []
     for crop_normalizer in state['crop_normalizers']:
         if crop_normalizer['type'] == 0:
             mean, stddev, clip = crop_normalizer['mean'], crop_normalizer['stddev'], \
-                                 crop_normalizer['clip']
+                                crop_normalizer['clip']
             model.crop_normalizers.append(FixedNormalizer(mean, stddev, clip))
 
         elif crop_normalizer['type'] == 1:
@@ -106,258 +108,401 @@ def load_det_model(model_folder, gpu_id=0):
         else:
             raise ValueError('Unsupported normalization type.')
 
-    return model
+    return model, chk_epoch
 
 
-def detection_voi(model, iso_image, start_voxel, end_voxel, use_gpu):
-    """ Segment the volume of interest
-    :param model:           the loaded segmentation model.
-    :param iso_image:       the image volume that has the same spacing with the model's resampling spacing.
-    :param start_voxel:     the start voxel of the volume of interest (inclusive).
-    :param end_voxel:       the end voxel of the volume of interest (exclusive).
-    :param use_gpu:         whether to use gpu or not, bool type.
-    :return:
-      mean_prob_maps:        the mean probability maps of all classes
-      std_maps:              the standard deviation maps of all classes
+def unwrap(model):
     """
-    assert isinstance(iso_image, sitk.Image)
-
-    roi_image = iso_image[start_voxel[0]:end_voxel[0],
-                start_voxel[1]:end_voxel[1], start_voxel[2]:end_voxel[2]]
-
-    if model['crop_normalizers'] is not None:
-        roi_image = model.crop_normalizers[0](roi_image)
-
-    roi_image_tensor = convert_image_to_tensor(roi_image).unsqueeze(0)
-    if use_gpu:
-        roi_image_tensor = roi_image_tensor.cuda()
-
-    with torch.no_grad():
-        landmarks_pred = model['net'](roi_image_tensor)
-
-    return landmarks_pred
-
-
-def detection_single_image(image, image_name, model, gpu_id, save_prob, save_folder):
-    """ volumetric segmentation for single image
-    :param image: the input volume
-    :param image_name: the name of the image
-    :param model: the detection model
-    :param gpu_id: the id of the gpu
-    :return: a dictionary containing the detected landmarks
+    Unwrap a model from DataParallel or DistributedDataParallel if needed.
+    Works recursively in case of nested wrapping.
     """
-    assert isinstance(image, sitk.Image)
+    # Drill down until no more .module attribute
+    unwrapped = model
+    while isinstance(unwrapped, (nn.DataParallel, nn.parallel.DistributedDataParallel)):
+        unwrapped = unwrapped.module
+    return unwrapped
 
-    # load landmark label dictionary
-    landmark_dict = model['train_cfg'].general.target_landmark_label
-    landmark_name_list, landmark_label_list = [], []
-    for landmark_name in landmark_dict.keys():
-        landmark_name_list.append(landmark_name)
-        landmark_label_list.append(landmark_dict[landmark_name])
-    landmark_label_reorder = np.argsort(landmark_label_list)
-
-    iso_image = resample_spacing(image, model['crop_spacing'], model['max_stride'],
-                                 model['interpolation'])
-    assert isinstance(iso_image, sitk.Image)
-
-    start_voxel, end_voxel = [0, 0, 0], [int(iso_image.GetSize()[idx]) for idx in range(3)]
-    voi_landmarks_pred = detection_voi(model, iso_image, start_voxel, end_voxel, gpu_id > 0)
-    print('{:0.2f}%'.format( 100))
-
-    # convert to landmark masks
-    landmark_mask_preds = voi_landmarks_pred.cpu()
-    assert landmark_mask_preds.shape[0] == 1
-    landmark_mask_preds = torch.squeeze(landmark_mask_preds)
-    landmark_mask_preds = convert_tensor_to_image(landmark_mask_preds, sitk.sitkFloat32)
-
-    detected_landmark = []
-    for i in range(0, model['num_landmark_classes']):
-        landmark_mask_pred = landmark_mask_preds[i + 1]  # exclude the background
-        landmark_mask_pred.CopyInformation(iso_image)
-
-        landmark_mask_prob = sitk.GetArrayFromImage(landmark_mask_pred)
-        # threshold the probability map to get the binary mask
-        prob_threshold = 0.5
-        landmark_mask_binary = np.zeros_like(landmark_mask_prob, dtype=np.int16)
-        landmark_mask_binary[landmark_mask_prob >= prob_threshold] = 1
-        landmark_mask_binary[landmark_mask_prob < prob_threshold] = 0
-
-        # pick the largest connected component
-        landmark_mask_cc = sitk.GetImageFromArray(landmark_mask_binary)
-        landmark_mask_cc = pick_largest_connected_component(landmark_mask_cc, [1])
-
-        # only keep probability of the largest connected component
-        landmark_mask_cc = sitk.GetArrayFromImage(landmark_mask_cc)
-        masked_landmark_mask_prob = np.multiply(landmark_mask_cc.astype(np.float), landmark_mask_prob)
-
-        # compute the weighted mass center of the probability map
-        masked_landmark_mask_prob = sitk.GetImageFromArray(masked_landmark_mask_prob)
-        masked_landmark_mask_prob.CopyInformation(iso_image)
-        voxel_coordinate = weighted_voxel_center(masked_landmark_mask_prob, prob_threshold, 1.0)
-
-        landmark_name = landmark_name_list[landmark_label_reorder[i]]
-        if voxel_coordinate is not None:
-            world_coordinate = masked_landmark_mask_prob.TransformContinuousIndexToPhysicalPoint(voxel_coordinate)
-            print("world coordinate of volume {0} landmark {1} is:[{2},{3},{4}]".format(
-                image_name, i, world_coordinate[0], world_coordinate[1], world_coordinate[2]))
-            detected_landmark.append(
-                [landmark_name, world_coordinate[0], world_coordinate[1], world_coordinate[2]]
-            )
-        else:
-            print("world coordinate of volume {0} landmark {1} is not detected.".format(image_name, i))
-            detected_landmark.append([landmark_name, 0, 0, 0])
-
-    detected_landmark_df = pd.DataFrame(data=detected_landmark, columns=['name', 'x', 'y', 'z'])
-
-    return detected_landmark_df
-
-
-def detection(input_path, model_folder, gpu_id, return_landmark_file, save_landmark_file, save_prob, output_folder):
-    """ volumetric image segmentation engine
-    :param input_path:              The path of text file, a single image file or a root dir with all image files
-    :param model_folder:            The path of trained model
-    :param gpu_id:                  Which gpu to use, set as -1 to use CPU for inference
-    :param return_landmark_file:    Whether return landmark file
-    :param save_landmark_file:      Whether save landmark file to disk
-    :param save_prob:               Whether save probability maps for all detected landmarks
-    :param output_folder:           The path of out folder
-    :return: None
+def detect_voi_patches( model, iso_image: sitk.Image, use_gpu: bool = True, window_size: tuple[int, int, int] = (128, 128, 128),
+                        batch_size: int = 1, overlap: float = 0.25, pad_mode: str = "constant", pad_value: float = 0.0,
+                        amp_dtype = torch.float16):
+    
     """
+    Run sliding-window 3D inference on a SimpleITK image.
 
-    # load model
-    begin = time.time()
-    model = load_det_model(model_folder, gpu_id)
-    load_model_time = time.time() - begin
+    Args:
+        model: PyTorch model (optionally wrapped).
+        iso_image: Preprocessed SimpleITK image.
+        use_gpu: Use CUDA if available, else CPU.
+        window_size: ROI size for sliding window.
+        batch_size: Number of windows per forward pass.
+        overlap: Overlap ratio between windows.
+        pad_mode: Padding mode ("constant", "reflect", etc.).
+        pad_value: Padding value if pad_mode="constant".
+        amp_dtype: AMP precision (e.g. torch.float16) or None.
 
-    # load landmark label dictionary
-    landmark_dict = model['train_cfg'].general.target_landmark_label
-    landmark_name_list, landmark_label_list = [], []
-    for landmark_name in landmark_dict.keys():
-        landmark_name_list.append(landmark_name)
-        landmark_label_list.append(landmark_dict[landmark_name])
-    landmark_label_reorder = np.argsort(landmark_label_list)
+    Returns:
+        np.ndarray: Logits array on CPU, shape [1, C, D, H, W].
+    """
+    # hygiene: free any leftovers before allocating
+    torch.cuda.empty_cache()
+    gc.collect()
 
-    # load test images
-    if os.path.isfile(input_path):
-        if input_path.endswith('.csv'):
-            file_name_list, file_path_list, _, _ = read_image_list(input_path, 'test')
-        else:
-            if input_path.endswith('.mhd') or input_path.endswith('.mha') or \
-                    input_path.endswith('.nii.gz') or input_path.endswith('.nii') or \
-                    input_path.endswith('.hdr') or input_path.endswith('.image3d'):
-                im_name = os.path.basename(input_path)
-                file_name_list = [im_name]
-                file_path_list = [input_path]
-
-            else:
-                raise ValueError('Unsupported input path.')
-
-    elif os.path.isdir(input_path):
-        file_name_list, file_path_list = read_test_folder(input_path)
-
+    # unwrap and put model in eval/inference mode
+    net = unwrap(model).eval()
+    if use_gpu and torch.cuda.is_available():
+        net = net.cuda()
     else:
-        if input_path.endswith('.csv'):
-            raise ValueError('The file doest no exist: {}.'.format(input_path))
-        else:
-            raise ValueError('Unsupported input path.')
+        use_gpu = False  # force CPU path if no CUDA
 
-    if save_landmark_file or save_prob:
-        if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)
+    arr = sitk.GetArrayFromImage(iso_image)  # z,y,x
+    input_tensor = torch.from_numpy(arr).float().unsqueeze(0).unsqueeze(0)  # [1,1,D,H,W]
 
-    # test each case
-    landmark_files = []
-    for i, file_path in enumerate(file_path_list):
-        print('{}: {}'.format(i, file_path))
+    if use_gpu:
+        input_tensor = input_tensor.cuda(non_blocking=True)
 
-        if not os.path.isfile(file_path):
-            print('File {} does not exist!'.format(file_path))
+    # sliding-window with GPU compute but CPU stitching ----
+    sw_device = input_tensor.device if use_gpu else torch.device("cpu")
+    out_device = torch.device("cpu")
+
+    window_size = tuple(int(x) for x in window_size)
+
+    with torch.inference_mode():
+        # Automatic mixed precision reduces activation memory a lot
+        autocast_ctx = (
+            torch.amp.autocast(enabled=use_gpu and amp_dtype is not None, dtype=amp_dtype, device_type='cuda')
+            if use_gpu else torch.autocast("cpu", enabled=False)
+        )
+        with autocast_ctx:
+            logits = sliding_window_inference(
+                inputs=input_tensor,                # [1,1,D,H,W]
+                roi_size=window_size,                
+                sw_batch_size=batch_size,           
+                predictor=net,                      
+                overlap=overlap,                    
+                mode="gaussian",                    
+                sigma_scale=0.125,
+                padding_mode=pad_mode,
+                cval=pad_value,
+                sw_device=sw_device,                
+                device=out_device,                  
+            )
+
+    # move result to CPU numpy and free GPU ----
+    out_np = logits.float().cpu().numpy()
+    del logits, input_tensor
+    torch.cuda.empty_cache()
+    gc.collect()
+    return out_np
+
+
+def image_preprocess(image, spacing=[0.3, 0.3, 0.3], max_stride=8, pad_size=None, interpolation='LINEAR', normalizer=None):
+    """Resample, optional pad, and optional normalize an image.
+
+    Args:
+        image: SimpleITK image.
+        spacing: Target spacing (xyz).
+        max_stride: Grid alignment for resampling.
+        pad_size: Optional pad size (xyz) to avoid edge effects.
+        interpolation: Resampling method.
+        normalizer: Optional callable to normalize image.
+
+    Returns:
+        SimpleITK.Image: Preprocessed image.
+    """
+
+    assert isinstance(image, sitk.Image)
+    iso_image = resample_spacing(image, spacing, max_stride, interpolation)
+    if pad_size:
+        iso_image = pad_image(iso_image, pad_size)  # pad to avoid edge effects
+    if normalizer is not None:
+        iso_image = normalizer(iso_image)
+    return iso_image
+
+
+def postprocess_landmark_probs(landmark_mask_preds: np.ndarray, iso_image: sitk.Image,
+                                landmark_name_to_label: Dict[str, int],prob_threshold: float = 0.8, 
+                                background_label: int = 0, keep_largest_cc: bool = True) -> List[List[float]]:
+    """Convert class probability maps into landmark detections.
+
+    Args:
+        landmark_mask_preds: Probabilities [C,D,H,W] or [1,C,D,H,W], channel 0 = background.
+        iso_image: SimpleITK image carrying geometry.
+        landmark_name_to_label: Map like {'Nasion': 1}.
+        prob_threshold: Threshold before centroid.
+        background_label: Channel index to skip.
+        keep_largest_cc: Keep only largest 3D component.
+
+    Returns:
+        list[dict]: [{'lmk_name': str, 'x': float, 'y': float, 'z': float}, ...]
+    """
+
+    assert isinstance(iso_image, sitk.Image), "iso_image must be a SimpleITK Image"
+
+    if landmark_mask_preds.ndim == 5:  # [N,C,D,H,W] -> [C,D,H,W]
+        assert landmark_mask_preds.shape[0] == 1, "Expected batch size 1 in postprocess"
+        landmark_mask_preds = landmark_mask_preds[0]
+
+    if landmark_mask_preds.ndim != 4:
+        raise ValueError(f"Expected probs of shape [C,D,H,W] or [1,C,D,H,W], got {landmark_mask_preds.shape}")
+
+    # ensure float32
+    if landmark_mask_preds.dtype != np.float32:
+        landmark_mask_preds = landmark_mask_preds.astype(np.float32, copy=False)
+
+    # sort landmarks by their numeric label (stable with your original code)
+    landmark_names = list(landmark_name_to_label.keys())
+    landmark_labels = np.array([landmark_name_to_label[n] for n in landmark_names], dtype=int)
+
+    detected_landmarks: List[List[float]] = []
+    landmark_prob_imgs = []
+
+    for idx in np.argsort(landmark_labels):
+        lmk_name = landmark_names[idx]
+        lmk_channel = int(landmark_name_to_label[lmk_name])
+        if lmk_channel == background_label:
+            # skip background by definition
             continue
 
-        # load image
-        begin = time.time()
-        image = sitk.ReadImage(file_path, sitk.sitkFloat32)
-        read_image_time = time.time() - begin
+        # channel prob map
+        landmark_mask_prob = landmark_mask_preds[lmk_channel]  # [D,H,W], float32
 
-        iso_image = resample_spacing(image, model['crop_spacing'], model['max_stride'],
-                                     model['interpolation'])
-        assert isinstance(iso_image, sitk.Image)
+        # threshold → binary
+        landmark_mask_binary = (landmark_mask_prob >= prob_threshold).astype(np.uint8)  # {0,1}
+        landmark_mask_binary = sitk.GetImageFromArray(landmark_mask_binary)     # binary
+        landmark_mask_binary.CopyInformation(iso_image)
 
-        start_voxels = [[0, 0, 0]]
-        end_voxels = [[int(iso_image.GetSize()[idx]) for idx in range(3)]]
+        # pick the largest connected component by physical size
+        if keep_largest_cc:
+            landmark_mask_cc = pick_largest_connected_component(landmark_mask_binary, landmark_labels)
 
-        begin = time.time()
-        voi_landmark_mask_preds = []
-        for idx in range(len(start_voxels)):
-            start_voxel, end_voxel = start_voxels[idx], end_voxels[idx]
+        # mask the probability by largest CC to compute max prob in component
+        landmark_mask_cc = sitk.GetArrayFromImage(landmark_mask_cc).astype(np.float32)  # [D,H,W]
 
-            voi_landmarks_pred = \
-                detection_voi(model, iso_image, start_voxel, end_voxel, gpu_id > 0)
+        masked_landmark_mask_prob = np.multiply(landmark_mask_cc, landmark_mask_prob)
 
-            voi_landmark_mask_preds.append(voi_landmarks_pred)
-            print('{:0.2f}%'.format((idx + 1) / len(start_voxels) * 100))
+        masked_landmark_mask_prob = sitk.GetImageFromArray(masked_landmark_mask_prob)
+        masked_landmark_mask_prob.CopyInformation(iso_image)
 
-        # convert to landmark masks
-        landmark_mask_preds = voi_landmark_mask_preds[0].cpu()
-        assert landmark_mask_preds.shape[0] == 1
-        landmark_mask_preds = torch.squeeze(landmark_mask_preds)
-        landmark_mask_preds = convert_tensor_to_image(landmark_mask_preds, sitk.sitkFloat32)
-        inference_time = time.time() - begin
-
-        begin = time.time()
-        detected_landmark = []
-        for j in range(0, model['num_landmark_classes']):
-          landmark_mask_pred = landmark_mask_preds[j + 1] # exclude the background
-          landmark_mask_pred.CopyInformation(iso_image)
-
-          if save_prob:
-            prob_path = os.path.join(output_folder, '{}_{}.mha'.format(file_name_list[i], j))
-            sitk.WriteImage(landmark_mask_pred, prob_path)
-
-          landmark_mask_prob = sitk.GetArrayFromImage(landmark_mask_pred)
-          # threshold the probability map to get the binary mask
-          prob_threshold = 0.5
-          landmark_mask_binary = np.zeros_like(landmark_mask_prob, dtype=np.int16)
-          landmark_mask_binary[landmark_mask_prob >= prob_threshold] = 1
-          landmark_mask_binary[landmark_mask_prob < prob_threshold] = 0
-
-          # pick the largest connected component
-          landmark_mask_cc = sitk.GetImageFromArray(landmark_mask_binary)
-          landmark_mask_cc = pick_largest_connected_component(landmark_mask_cc, [1])
-
-          # only keep probability of the largest connected component
-          landmark_mask_cc = sitk.GetArrayFromImage(landmark_mask_cc)
-          masked_landmark_mask_prob = np.multiply(landmark_mask_cc.astype(np.float32), landmark_mask_prob)
-
-          # compute the weighted mass center of the probability map
-          masked_landmark_mask_prob = sitk.GetImageFromArray(masked_landmark_mask_prob)
-          masked_landmark_mask_prob.CopyInformation(iso_image)
-          voxel_coordinate = weighted_voxel_center(masked_landmark_mask_prob, prob_threshold, 1.0)
-
-          landmark_name = landmark_name_list[landmark_label_reorder[j]]
-          if voxel_coordinate is not None:
+        voxel_coordinate = weighted_voxel_center(masked_landmark_mask_prob, prob_threshold, 1.0)
+        if voxel_coordinate is not None:
             # convert voxel coordinate to world coordinate (the voxel_coordinate should be in double-precision?)
-            world_coordinate = masked_landmark_mask_prob.TransformContinuousIndexToPhysicalPoint(voxel_coordinate)
-            print("world coordinate of volume {0} landmark {1} is:[{2},{3},{4}]".format(
-              file_name_list[i], j, world_coordinate[0], world_coordinate[1], world_coordinate[2]))
-            detected_landmark.append(
-                [landmark_name, world_coordinate[0], world_coordinate[1], world_coordinate[2]]
-            )
-          else:
-            print("world coordinate of volume {0} landmark {1} is not detected.".format(file_name_list[i], j))
-            detected_landmark.append([landmark_name, -1, -1, -1])
+            world_coordinate = masked_landmark_mask_prob.TransformContinuousIndexToPhysicalPoint(tuple(map(float, voxel_coordinate)))
+            detected_landmarks.append({'lmk_name': lmk_name, 'x': float(world_coordinate[0]), 'y': float(world_coordinate[1]), 'z': float(world_coordinate[2])})
+        else:
+            detected_landmarks.append({'lmk_name': lmk_name, 'x': -1, 'y':  -1, 'z': -1})
 
-        detected_landmark_df = pd.DataFrame(data=detected_landmark, columns=['name', 'x', 'y', 'z'])
-        if return_landmark_file:
-            landmark_files.append(detected_landmark_df)
+    return detected_landmarks
 
-        if save_landmark_file:
-            detected_landmark_save_path = os.path.join(output_folder, '{}.csv'.format(file_name_list[i]))
-            detected_landmark_df.to_csv(detected_landmark_save_path, index=False)
 
-        saving_time = time.time() - begin
-        print('read: {:.2f} s, prediction: {:.2f} s, saving: {:.2f} s'.format(
-            read_image_time + load_model_time, inference_time, saving_time)
+def detection_single_image(image, model_folder, window_size=None, gpu_id=0, chk_epoch=-1,
+                                batch_size=1, prob_threshold=0.8, overlap=0.25):
+    
+    """
+    Run volumetric landmark detection on a single 3D image.
+
+    Args:
+        image: Input SimpleITK image.
+        model_folder: Path to model or run_{n} folder.
+        window_size: Sliding window size (default: 128³).
+        gpu_id: GPU ID (default: 0).
+        chk_epoch: Checkpoint epoch, -1 for latest.
+        batch_size: Inference batch size.
+        prob_threshold: Detection probability threshold.
+        overlap: Sliding window overlap ratio.
+
+    Returns:
+        DataFrame of detected landmarks with coordinates.
+    """
+
+    assert isinstance(image, sitk.Image)
+    # Load model
+    run_dir = get_resolved_run_dir(model_folder)
+    model, chk_epoch = load_det_model(run_dir, gpu_id, chk_epoch)
+
+    # Load landmark label dictionary
+    landmark_dict = model['train_cfg'].general.target_landmark_label
+
+    if window_size is None:
+        window_size = model['crop_size']
+        print(f"No window size specified. Falling back to model's crop_size: {window_size}")
+
+    assert np.all(np.array(window_size) % model['max_stride'] == 0), 'crop size not divisible by max stride'
+    window_size = tuple(window_size)
+
+    # Preprocess the image
+    normalizer= model.crop_normalizers[0] if model['crop_normalizers'] is not None else None
+    iso_image = image_preprocess(image, model['crop_spacing'], model['max_stride'],
+                                    model['pad_size'], model['interpolation'],
+                                    normalizer)
+
+    landmark_mask_preds = detect_voi_patches(
+        model.net,
+        iso_image,
+        use_gpu=(gpu_id is not None and gpu_id >= 0),
+        window_size=window_size,  
+        batch_size=batch_size,  
+        overlap=overlap,                    
+        pad_mode="constant",
+        pad_value=0.0,
+    )
+
+        # Post-process
+    detected_landmark = postprocess_landmark_probs(
+            landmark_mask_preds=landmark_mask_preds,
+            iso_image=iso_image,
+            landmark_name_to_label=landmark_dict,
+            prob_threshold=prob_threshold,
+            background_label=0,
+        )
+    
+
+    return pd.DataFrame(detected_landmark)
+
+def detection(input, model_folder, gpu_id, return_landmark_file, save_landmark_file, save_prob,
+                output_folder, window_size=None, over_lap =0.5, batch_size = 4, prob_threshold=0.5, chk_epoch=-1):
+    
+    """Run volumetric landmark detection on one or more images (patch-based).
+
+    Args:
+        input: Path to a volume, a directory, or a CSV list file.
+        model_folder: Model directory or run_{n} folder.
+        gpu_id: GPU id (>=0) or -1/None for CPU.
+        return_landmark_file: If True, return detections.
+        save_landmark_file: If True, write detections to disk.
+        save_prob: If True, save per-class probability volumes.
+        output_folder: Output directory.
+        window_size: Sliding-window size, default model crop_size if None.
+        over_lap: Overlap ratio for sliding-window inference.
+        batch_size: Number of windows per forward pass.
+        prob_threshold: Min probability to accept a landmark.
+        chk_epoch: Checkpoint epoch (-1 = latest).
+
+    Returns:
+        pandas.DataFrame | None: Detections if requested, else None.
+    """
+    
+    run_dir = get_resolved_run_dir(model_folder)
+    # Load model
+    begin = time.time()
+    model, chk_epoch = load_det_model(run_dir, gpu_id, chk_epoch)
+    load_model_time = time.time() - begin
+
+    # Load landmark label dictionary
+    landmark_dict = model['train_cfg'].general.target_landmark_label
+
+    if window_size is None:
+        window_size = model['crop_size']
+        print(f"No window size specified. Falling back to model's crop_size: {window_size}")
+
+
+    assert np.all(np.array(window_size) % model['max_stride'] == 0), 'crop size not divisible by max stride'
+    window_size = tuple(window_size)
+
+    # Load test images
+    if os.path.isfile(input):
+        if input.endswith('.csv'):
+            file_name_list, file_path_list, _, _ = read_image_list(input, 'test')
+        else:
+            file_name_list = [os.path.basename(input)]
+            file_path_list = [input]
+    elif os.path.isdir(input):
+        file_name_list, file_path_list = read_test_folder(input)
+    else:
+        raise ValueError(f"Unsupported input path: {input}")
+    
+
+    if save_landmark_file or save_prob:
+        run_name = run_dir.split("/")[-1]
+        output_folder = os.path.join(output_folder, f"{run_name}_epoch{chk_epoch}_results")
+        os.makedirs(output_folder, exist_ok=True)
+
+
+    # Collect results
+    all_results = []
+    for i, (file_path, file_name) in enumerate(zip(file_path_list, file_name_list)):
+        file_name = file_name.removesuffix(".nii.gz")
+        print(f"[{i}/{len(file_name_list)}] Processing: {file_name}")
+
+        if not os.path.isfile(file_path):
+            print(f"File not found: {file_path}")
+            continue
+
+        # Load and resample image
+        start_read = time.time()
+        image = sitk.ReadImage(file_path, sitk.sitkFloat32)
+        read_image_time = time.time() - start_read
+
+        normalizer= model.crop_normalizers[0] if model['crop_normalizers'] is not None else None
+
+        iso_image = image_preprocess(image, model['crop_spacing'], model['max_stride'], model['pad_size'],
+                                      model['interpolation'], normalizer)
+
+
+        # Forward pass
+        start_infer = time.time()
+
+        landmark_mask_preds = detect_voi_patches(
+            model.net,
+            iso_image,
+            use_gpu=(gpu_id is not None and gpu_id >= 0),
+            window_size=window_size, 
+            batch_size=batch_size,  
+            overlap=over_lap,                    
+            pad_mode="constant",
+            pad_value=0.0,
         )
 
-    return landmark_files
+        infer_time = time.time() - start_infer
+
+        # Post-process
+        start_post = time.time()
+        detected_landmark = postprocess_landmark_probs(
+            landmark_mask_preds=landmark_mask_preds,                   
+            iso_image=iso_image,
+            landmark_name_to_label=landmark_dict,
+            prob_threshold=prob_threshold,
+            background_label=0,
+        )
+
+        if return_landmark_file:
+            tagged_landmarks = []
+            for item in detected_landmark:
+                tagged_item = item.copy()  # shallow copy
+                tagged_item['image_id'] = file_name
+                tagged_landmarks.append(tagged_item)
+            all_results.extend(tagged_landmarks)
+
+
+        if save_landmark_file or save_prob:
+            detected_landmark_save_path = os.path.join(output_folder, file_name)
+            os.makedirs(detected_landmark_save_path, exist_ok=True)
+
+        if save_landmark_file:
+            detected_landmark_df_path = os.path.join(detected_landmark_save_path,  '{}.csv'.format(file_name))
+            detected_landmark_df = pd.DataFrame(detected_landmark)
+            detected_landmark_df.to_csv(detected_landmark_df_path, index=False)
+
+        if save_prob:
+            # landmark_mask_preds shape: (num_classes+1, D, H, W), channel 0 = background
+            if landmark_mask_preds.ndim == 5 and landmark_mask_preds.shape[0] == 1:
+                landmark_mask_preds = np.squeeze(landmark_mask_preds, axis=0)
+
+            for class_id in range(1, model['num_landmark_classes'] + 1):
+                arr = landmark_mask_preds[class_id].astype(np.float32)   # (D, H, W)
+
+                img = sitk.GetImageFromArray(arr)
+                img.CopyInformation(iso_image)
+
+                prob_path = os.path.join(
+                    detected_landmark_save_path,
+                    f"{file_name}_{class_id}.mha"
+                )
+                sitk.WriteImage(img, prob_path)
+
+        post_time = time.time() - start_post
+        print(f"⏱ read: {read_image_time+load_model_time:.2f}s  | prediction: {infer_time:.2f}s | saving: {post_time:.2f}s")
+        
+    if return_landmark_file:
+        result_df = pd.DataFrame(all_results)
+        cols = ["image_id"] + [c for c in result_df.columns if c != "image_id"]
+        return result_df[cols]
