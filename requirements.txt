@@ -1,4 +1,4 @@
-torch==2.7.1
+torch==2.12.0
 torchvision
 easydict==1.13
 tqdm==4.67.1
